@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Every signed-in user gets their own private branch of the database at
+    // /users/{their-uid}/... — Google Sign-In guarantees request.auth.uid is
+    // the caller's real, verified account ID, so this single rule is enough
+    // to make sure nobody can ever read or write another user's data.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
