@@ -13,7 +13,7 @@ import {
   computeTypeStats,
   softStyle,
 } from "../lib/timeUtils";
-import { Badge, StatCard, EmptyState } from "./ui";
+import { Badge, StatCard, EmptyState, inputClass } from "./ui";
 
 /* =========================================================================
    TASK TYPE (SUBCATEGORY) PERFORMANCE
