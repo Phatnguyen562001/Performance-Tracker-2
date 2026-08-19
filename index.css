@@ -1,0 +1,28 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Print report is hidden on screen; only shown when printing (used for the
+   "Export PDF" action, which opens the browser print dialog). */
+.print-report {
+  display: none;
+}
+
+@media print {
+  .app-shell {
+    display: none !important;
+  }
+  .print-report {
+    display: block !important;
+  }
+}
