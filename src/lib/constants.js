@@ -28,6 +28,11 @@ export const STATUS_STYLES = {
 export const PRIORITY_HEX = { High: "#e11d48", Medium: "#d97706", Low: "#10b981" };
 export const PALETTE = ["#4f46e5", "#0d9488", "#d97706", "#e11d48", "#0ea5e9", "#8b5cf6", "#65a30d", "#db2777", "#0891b2", "#78716c"];
 
+// A "round" is one step in a back-and-forth workflow (e.g. contract review
+// cycles) tracked inside a single task instead of splitting it into many.
+// Type is free text (not a fixed list) — these are just starting suggestions.
+export const ROUND_TYPE_SUGGESTIONS = ["Sent", "Received", "Internal", "Escalated"];
+
 export const STORAGE_KEYS = {
   tasks: "lpt_tasks_v2",
   categories: "lpt_categories_v1",

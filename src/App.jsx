@@ -269,6 +269,7 @@ export default function App() {
       "Business hours only": t.trackBusinessHours !== false ? "Yes" : "No",
       "Completion %": taskCompletionPct(t),
       "Total Hours": +taskTotalHours(t, holidaySet).toFixed(2),
+      Rounds: t.rounds?.length || 0,
       Description: t.description,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -284,6 +285,7 @@ export default function App() {
       { wch: 14 },
       { wch: 12 },
       { wch: 12 },
+      { wch: 10 },
       { wch: 40 },
     ];
     const wb = XLSX.utils.book_new();

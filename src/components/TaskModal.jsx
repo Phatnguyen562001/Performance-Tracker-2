@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { X, AlertTriangle, GripVertical, CheckCircle2, Circle, Trash2, Plus, Clock } from "lucide-react";
-import { PRIORITIES, STATUSES, MAX_SUBTASKS } from "../lib/constants";
+import { X, AlertTriangle, GripVertical, CheckCircle2, Circle, Trash2, Plus, Clock, ChevronRight, Repeat } from "lucide-react";
+import { PRIORITIES, STATUSES, MAX_SUBTASKS, ROUND_TYPE_SUGGESTIONS } from "../lib/constants";
 import {
   uid,
   classNames,
@@ -9,9 +9,58 @@ import {
   sessionMinutes,
   formatHours,
   formatClockTime,
+  formatDateDisplay,
   getTemplateSubtasks,
+  stringToColor,
 } from "../lib/timeUtils";
 import { Field, IconButton, inputClass } from "./ui";
+
+/* =========================================================================
+   ROUNDS FLOW CHART — visual chain of a task's back-and-forth cycles
+   ========================================================================= */
+
+function RoundsFlow({ rounds }) {
+  if (rounds.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+        No rounds logged yet — add the first one below.
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-800/30">
+      <div className="flex items-stretch gap-1.5" style={{ minWidth: "max-content" }}>
+        {rounds.map((r, idx) => {
+          const color = r.color || stringToColor(r.label || "Round");
+          return (
+            <React.Fragment key={r.id}>
+              <div className="flex w-44 shrink-0 flex-col gap-1 rounded-lg border px-3 py-2" style={{ borderColor: `${color}40`, backgroundColor: `${color}14` }}>
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                  {r.label || "Round"}
+                </div>
+                <p className="line-clamp-2 whitespace-pre-line text-xs font-medium leading-snug text-slate-700 dark:text-slate-200" title={r.note}>
+                  {r.note || "—"}
+                </p>
+                {r.recipient && (
+                  <p className="truncate text-[10px] text-slate-500 dark:text-slate-400" title={r.recipient}>
+                    → {r.recipient}
+                  </p>
+                )}
+                <p className="font-mono text-[10px] text-slate-400">{formatDateDisplay(r.date)}</p>
+              </div>
+              {idx < rounds.length - 1 && (
+                <div className="flex shrink-0 items-center text-slate-300 dark:text-slate-600">
+                  <ChevronRight size={16} />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* =========================================================================
    TASK MODAL (create / edit / detail)
@@ -36,6 +85,7 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
       trackBusinessHours: task?.trackBusinessHours !== false,
       subtasks: task?.subtasks ? [...task.subtasks] : getTemplateSubtasks(categories, initCategory, initSubcategory),
       sessions: task?.sessions ? [...task.sessions] : [],
+      rounds: task?.rounds ? [...task.rounds] : [],
     };
   });
   const [tab, setTab] = useState("details");
@@ -96,6 +146,21 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
     setDragSubIdx(null);
   }
 
+  // Rounds are always appended in the order they happened — this is what the
+  // flow chart reads left-to-right, so no separate reordering is needed.
+  function addRound() {
+    setForm((f) => ({
+      ...f,
+      rounds: [...f.rounds, { id: uid(), date: todayYMD(), label: "Sent", recipient: "", note: "", color: stringToColor("Sent") }],
+    }));
+  }
+  function updateRound(id, patch) {
+    setForm((f) => ({ ...f, rounds: f.rounds.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  }
+  function removeRound(id) {
+    setForm((f) => ({ ...f, rounds: f.rounds.filter((r) => r.id !== id) }));
+  }
+
   function addSession() {
     const now = new Date();
     setForm((f) => ({
@@ -122,12 +187,13 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
 
   const tabs = [
     { id: "details", label: "Details" },
+    { id: "rounds", label: `Rounds (${form.rounds.length})` },
     { id: "subtasks", label: `Subtasks (${form.subtasks.length}/${MAX_SUBTASKS})` },
     { id: "time", label: `Time log (${formatHours(totalHours)})` },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-6 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6 sm:items-center">
       <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
@@ -253,6 +319,85 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                   </select>
                 </Field>
               </div>
+            </div>
+          )}
+
+          {tab === "rounds" && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                For work that goes back and forth (e.g. contract review cycles) — log each round here instead of
+                creating separate tasks. The chart below reads left-to-right in the order you add them.
+              </p>
+
+              <RoundsFlow rounds={form.rounds} />
+
+              <datalist id="round-type-suggestions">
+                {[...new Set([...ROUND_TYPE_SUGGESTIONS, ...form.rounds.map((r) => r.label).filter(Boolean)])].map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+
+              <div className="space-y-2 pt-1">
+                {form.rounds.map((r) => (
+                  <div key={r.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Type">
+                        <div className="flex items-stretch gap-1.5">
+                          <input
+                            className={inputClass}
+                            list="round-type-suggestions"
+                            value={r.label}
+                            onChange={(e) => updateRound(r.id, { label: e.target.value })}
+                            placeholder="e.g. Sent, Received, Internal..."
+                          />
+                          <input
+                            type="color"
+                            value={r.color || stringToColor(r.label || "Round")}
+                            onChange={(e) => updateRound(r.id, { color: e.target.value })}
+                            title="Pick a color for this round"
+                            className="h-9 w-10 shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                      </Field>
+                      <Field label="Recipient">
+                        <input
+                          className={inputClass}
+                          value={r.recipient || ""}
+                          onChange={(e) => updateRound(r.id, { recipient: e.target.value })}
+                          placeholder="e.g. Vendor Legal Team"
+                        />
+                      </Field>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Field label="Date">
+                        <input type="date" className={inputClass} value={r.date} onChange={(e) => updateRound(r.id, { date: e.target.value })} />
+                      </Field>
+                      <div className="flex items-end justify-end">
+                        <IconButton danger title="Remove round" onClick={() => removeRound(r.id)}>
+                          <Trash2 size={14} />
+                        </IconButton>
+                      </div>
+                    </div>
+                    <div className="mt-2">
+                      <Field label="Note">
+                        <textarea
+                          className={classNames(inputClass, "min-h-[64px] resize-y")}
+                          value={r.note}
+                          onChange={(e) => updateRound(r.id, { note: e.target.value })}
+                          placeholder='e.g. "V1 sent to vendor for comments"'
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={addRound}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:hover:border-indigo-500"
+              >
+                <Plus size={13} /> Add round
+              </button>
             </div>
           )}
 

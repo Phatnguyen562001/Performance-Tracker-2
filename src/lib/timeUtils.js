@@ -2,6 +2,8 @@
    UTILITIES
    ========================================================================= */
 
+import { PALETTE } from "./constants";
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export function pad2(n) {
@@ -58,6 +60,17 @@ export function softStyle(hex) {
 }
 export function solidStyle(hex) {
   return { backgroundColor: hex, color: "#fff" };
+}
+
+/** Deterministic color for any free-text label (e.g. a round's Type), so
+    values the user types stay visually distinct without needing a fixed list. */
+export function stringToColor(str) {
+  if (!str) return "#64748b";
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
 /**

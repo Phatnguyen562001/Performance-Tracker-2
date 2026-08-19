@@ -13,6 +13,7 @@ import {
   Play,
   Square,
   Plus,
+  Repeat,
 } from "lucide-react";
 import { STATUSES, PRIORITY_DOT, PRIORITY_STYLES, STATUS_STYLES } from "../lib/constants";
 import {
@@ -66,8 +67,15 @@ export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDra
         <span className={classNames("flex items-center gap-1", overdue && "font-medium text-rose-600 dark:text-rose-400")}>
           <CalendarDays size={12} /> {formatDateDisplay(task.deadline)}
         </span>
-        <span className="flex items-center gap-1 font-mono">
-          <Clock size={12} /> {formatHours(hours)}
+        <span className="flex items-center gap-2 font-mono">
+          {task.rounds?.length > 0 && (
+            <span className="flex items-center gap-0.5" title={`${task.rounds.length} round(s) logged`}>
+              <Repeat size={11} /> {task.rounds.length}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <Clock size={12} /> {formatHours(hours)}
+          </span>
         </span>
       </div>
       <button
@@ -132,7 +140,14 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
               >
                 <td className="max-w-[220px] px-4 py-3">
                   <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{t.title}</p>
-                  <p className="truncate text-xs text-slate-400">{t.subcategory}</p>
+                  <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+                    {t.subcategory}
+                    {t.rounds?.length > 0 && (
+                      <span className="flex items-center gap-0.5 text-slate-400" title={`${t.rounds.length} round(s) logged`}>
+                        <Repeat size={10} /> {t.rounds.length}
+                      </span>
+                    )}
+                  </p>
                 </td>
                 <td className="px-4 py-3">
                   <Badge className="border-0" style={softStyle(color)}>
