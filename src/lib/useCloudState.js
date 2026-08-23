@@ -69,10 +69,10 @@ export function useCloudDoc(uid) {
  * unchanged, since this preserves the "value or updater function" convention.
  */
 export function makeFieldState(cloudDoc, setCloudDoc, field, fallback) {
-  const value = cloudDoc ? cloudDoc[field] : fallback;
+  const value = cloudDoc && cloudDoc[field] !== undefined ? cloudDoc[field] : fallback;
   const setValue = (updater) => {
     setCloudDoc((prevDoc) => {
-      const prevFieldValue = prevDoc ? prevDoc[field] : fallback;
+      const prevFieldValue = prevDoc && prevDoc[field] !== undefined ? prevDoc[field] : fallback;
       const nextFieldValue = typeof updater === "function" ? updater(prevFieldValue) : updater;
       return { ...(prevDoc || {}), [field]: nextFieldValue };
     });
