@@ -5,7 +5,7 @@ import { formatDateDisplay, formatHours, taskCompletionPct, taskTotalHours } fro
    PRINT REPORT (used for PDF export)
    ========================================================================= */
 
-export function PrintReport({ tasks, holidaySet }) {
+export function PrintReport({ tasks, holidaySet, workSchedule }) {
   return (
     <div className="print-report hidden p-8 text-black">
       <h1 className="text-xl font-bold">Legal Performance Tracker — Task Report</h1>
@@ -31,7 +31,7 @@ export function PrintReport({ tasks, holidaySet }) {
               <td className="border border-slate-300 px-2 py-1">{t.assigner}</td>
               <td className="border border-slate-300 px-2 py-1">{formatDateDisplay(t.deadline)}</td>
               <td className="border border-slate-300 px-2 py-1">{taskCompletionPct(t)}%</td>
-              <td className="border border-slate-300 px-2 py-1">{formatHours(taskTotalHours(t, holidaySet))}</td>
+              <td className="border border-slate-300 px-2 py-1">{formatHours(taskTotalHours(t, holidaySet, workSchedule))}</td>
             </tr>
           ))}
         </tbody>

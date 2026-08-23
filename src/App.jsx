@@ -2,7 +2,16 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import * as XLSX from "xlsx";
 
 import { STORAGE_KEYS, PALETTE } from "./lib/constants";
-import { uid, todayYMD, taskCompletionPct, taskTotalHours, toDateTimeLocalValue, getTemplateSubtasks, buildAssignerDeptMap } from "./lib/timeUtils";
+import {
+  uid,
+  todayYMD,
+  taskCompletionPct,
+  taskTotalHours,
+  toDateTimeLocalValue,
+  getTemplateSubtasks,
+  buildAssignerDeptMap,
+  DEFAULT_WORK_SESSIONS,
+} from "./lib/timeUtils";
 import { useLocalStorage } from "./lib/storage";
 import { useAuth } from "./lib/useAuth";
 import { useCloudDoc, makeFieldState } from "./lib/useCloudState";
@@ -27,15 +36,17 @@ export default function App() {
   const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.theme, "light");
 
   // One Firestore document per signed-in user holds tasks + categories +
-  // departments + assigners + holidays. These field-scoped [value, setValue]
-  // pairs behave exactly like the old useLocalStorage ones, so every function
-  // below (saveTask, deleteTask, importData, ...) needed no changes at all.
+  // departments + assigners + holidays + workSchedule. These field-scoped
+  // [value, setValue] pairs behave exactly like the old useLocalStorage ones,
+  // so every function below (saveTask, deleteTask, importData, ...) needed
+  // no changes at all.
   const [cloudDoc, setCloudDoc] = useCloudDoc(user?.uid);
   const [tasks, setTasks] = makeFieldState(cloudDoc, setCloudDoc, "tasks", null);
   const [categories, setCategories] = makeFieldState(cloudDoc, setCloudDoc, "categories", null);
   const [departments, setDepartments] = makeFieldState(cloudDoc, setCloudDoc, "departments", null);
   const [assigners, setAssigners] = makeFieldState(cloudDoc, setCloudDoc, "assigners", null);
   const [holidays, setHolidays] = makeFieldState(cloudDoc, setCloudDoc, "holidays", []);
+  const [workSchedule, setWorkSchedule] = makeFieldState(cloudDoc, setCloudDoc, "workSchedule", DEFAULT_WORK_SESSIONS);
 
   const [view, setView] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -64,6 +75,7 @@ export default function App() {
         departments: buildSeedDepartments(),
         assigners: buildSeedAssigners(),
         holidays: [],
+        workSchedule: DEFAULT_WORK_SESSIONS,
       });
     }
   }, [user, cloudDoc, setCloudDoc]);
@@ -153,9 +165,8 @@ export default function App() {
   );
 
   // Simple stopwatch: first click saves "now" as the task's runningStart; second
-  // click saves "now" as the end and turns the pair into a session — no manual
-  // hour/minute entry needed. Business-hours math is applied the same way it
-  // already is for manually-entered sessions.
+  // click ("End") saves "now" as the end, turns the pair into a session, and
+  // marks the task Completed — stopping the clock means the work is done.
   const toggleTimer = useCallback(
     (taskId) => {
       const now = toDateTimeLocalValue(new Date());
@@ -163,7 +174,13 @@ export default function App() {
         prev.map((t) => {
           if (t.id !== taskId) return t;
           if (t.runningStart) {
-            return { ...t, runningStart: null, sessions: [...(t.sessions || []), { id: uid(), start: t.runningStart, end: now }] };
+            return {
+              ...t,
+              runningStart: null,
+              sessions: [...(t.sessions || []), { id: uid(), start: t.runningStart, end: now }],
+              status: "Completed",
+              completedAt: new Date().toISOString(),
+            };
           }
           return { ...t, runningStart: now };
         })
@@ -206,13 +223,14 @@ export default function App() {
   function exportData() {
     const payload = {
       app: "legal-performance-tracker",
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       tasks: safeTasks,
       categories: safeCategories,
       departments: safeDepartments,
       assigners: safeAssigners,
       holidays,
+      workSchedule,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -249,9 +267,10 @@ export default function App() {
       setTasks(data.tasks);
       setCategories(data.categories);
       if (Array.isArray(data.holidays)) setHolidays(data.holidays);
-      // Older backups (v1) predate Departments & Assigners — keep current ones if the file has none.
+      // Older backups (v1/v2) predate Departments & Assigners / Work Schedule — keep current ones if the file has none.
       if (Array.isArray(data.departments)) setDepartments(data.departments);
       if (Array.isArray(data.assigners)) setAssigners(data.assigners);
+      if (Array.isArray(data.workSchedule)) setWorkSchedule(data.workSchedule);
     };
     reader.readAsText(file);
   }
@@ -268,7 +287,8 @@ export default function App() {
       Deadline: t.deadline,
       "Business hours only": t.trackBusinessHours !== false ? "Yes" : "No",
       "Completion %": taskCompletionPct(t),
-      "Total Hours": +taskTotalHours(t, holidaySet).toFixed(2),
+      "Estimated Hours": t.estimate || "",
+      "Total Hours": +taskTotalHours(t, holidaySet, workSchedule).toFixed(2),
       Rounds: t.rounds?.length || 0,
       Description: t.description,
     }));
@@ -284,6 +304,7 @@ export default function App() {
       { wch: 12 },
       { wch: 14 },
       { wch: 12 },
+      { wch: 14 },
       { wch: 12 },
       { wch: 10 },
       { wch: 40 },
@@ -334,6 +355,7 @@ export default function App() {
               <DashboardView
                 tasks={safeTasks}
                 holidaySet={holidaySet}
+                workSchedule={workSchedule}
                 categoryCount={safeCategories.length}
                 onOpen={(t) => setModalTask(t)}
                 onViewTypes={() => setView("types")}
@@ -343,6 +365,7 @@ export default function App() {
               <TasksView
                 tasks={safeTasks}
                 holidaySet={holidaySet}
+                workSchedule={workSchedule}
                 categories={safeCategories}
                 categoryColors={categoryColors}
                 assigners={safeAssigners}
@@ -363,6 +386,7 @@ export default function App() {
               <TaskTypesView
                 tasks={safeTasks}
                 holidaySet={holidaySet}
+                workSchedule={workSchedule}
                 categories={safeCategories}
                 categoryColors={categoryColors}
                 onOpenTask={(t) => setModalTask(t)}
@@ -372,6 +396,7 @@ export default function App() {
               <AnalyticsView
                 tasks={safeTasks}
                 holidaySet={holidaySet}
+                workSchedule={workSchedule}
                 categoryColors={categoryColors}
                 assignerDeptMap={assignerDeptMap}
                 theme={theme}
@@ -381,6 +406,8 @@ export default function App() {
               <SettingsView
                 holidays={holidays}
                 setHolidays={setHolidays}
+                workSchedule={workSchedule}
+                setWorkSchedule={setWorkSchedule}
                 categories={safeCategories}
                 setCategories={setCategories}
                 departments={safeDepartments}
@@ -394,6 +421,7 @@ export default function App() {
                   setCategories(buildSeedCategories());
                   setDepartments(buildSeedDepartments());
                   setAssigners(buildSeedAssigners());
+                  setWorkSchedule(DEFAULT_WORK_SESSIONS);
                 }}
                 onExportData={exportData}
                 onImportData={importData}
@@ -419,13 +447,14 @@ export default function App() {
           categories={safeCategories}
           assigners={safeAssigners}
           holidaySet={holidaySet}
+          workSchedule={workSchedule}
           onClose={() => setModalTask(undefined)}
           onSave={saveTask}
           onDelete={deleteTask}
         />
       )}
 
-      {printData && <PrintReport tasks={printData} holidaySet={holidaySet} />}
+      {printData && <PrintReport tasks={printData} holidaySet={holidaySet} workSchedule={workSchedule} />}
     </div>
   );
 }

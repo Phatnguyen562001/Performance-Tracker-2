@@ -1,25 +1,35 @@
 import React, { useMemo } from "react";
 import { ListChecks, CheckCircle2, TrendingUp, AlertTriangle, ArrowUpRight, Clock, FolderTree } from "lucide-react";
-import { formatYMD, addDays, todayYMD, formatDateDisplay, formatHours, taskTotalHours, isTaskOverdue } from "../lib/timeUtils";
+import {
+  formatYMD,
+  addDays,
+  todayYMD,
+  formatDateDisplay,
+  formatHours,
+  taskTotalHours,
+  isTaskOverdue,
+  isTaskCompletedLate,
+} from "../lib/timeUtils";
 import { StatCard, ProgressBar } from "./ui";
 
 /* =========================================================================
    DASHBOARD VIEW
    ========================================================================= */
 
-export function DashboardView({ tasks, holidaySet, categoryCount, onOpen, onViewTypes }) {
+export function DashboardView({ tasks, holidaySet, workSchedule, categoryCount, onOpen, onViewTypes }) {
   const stats = useMemo(() => {
     const total = tasks.length;
     const completed = tasks.filter((t) => t.status === "Completed").length;
     const inProgress = tasks.filter((t) => t.status === "In Progress").length;
     const overdue = tasks.filter(isTaskOverdue).length;
-    const totalHours = tasks.reduce((sum, t) => sum + taskTotalHours(t, holidaySet), 0);
+    const completedLate = tasks.filter(isTaskCompletedLate).length;
+    const totalHours = tasks.reduce((sum, t) => sum + taskTotalHours(t, holidaySet, workSchedule), 0);
     const completionRate = total ? (completed / total) * 100 : 0;
     const avgHoursPerTask = total ? totalHours / total : 0;
 
     const bySub = {};
     tasks.forEach((t) => {
-      const h = taskTotalHours(t, holidaySet);
+      const h = taskTotalHours(t, holidaySet, workSchedule);
       if (h <= 0) return;
       if (!bySub[t.subcategory]) bySub[t.subcategory] = { hours: 0, count: 0 };
       bySub[t.subcategory].hours += h;
@@ -29,8 +39,8 @@ export function DashboardView({ tasks, holidaySet, categoryCount, onOpen, onView
       .map(([name, v]) => ({ name, avg: v.hours / v.count }))
       .sort((a, b) => b.avg - a.avg);
 
-    return { total, completed, inProgress, overdue, totalHours, completionRate, avgHoursPerTask, avgBySub };
-  }, [tasks, holidaySet]);
+    return { total, completed, inProgress, overdue, completedLate, totalHours, completionRate, avgHoursPerTask, avgBySub };
+  }, [tasks, holidaySet, workSchedule]);
 
   const upcoming = useMemo(() => {
     const today = todayYMD();
@@ -48,6 +58,7 @@ export function DashboardView({ tasks, holidaySet, categoryCount, onOpen, onView
         <StatCard icon={CheckCircle2} label="Completed" value={stats.completed} accent="text-emerald-600 dark:text-emerald-400" />
         <StatCard icon={TrendingUp} label="In Progress" value={stats.inProgress} accent="text-indigo-600 dark:text-indigo-400" />
         <StatCard icon={AlertTriangle} label="Overdue" value={stats.overdue} accent="text-rose-600 dark:text-rose-400" />
+        <StatCard icon={Clock} label="Completed Late" value={stats.completedLate} accent="text-amber-600 dark:text-amber-400" />
         <StatCard icon={ArrowUpRight} label="Completion Rate" value={`${stats.completionRate.toFixed(0)}%`} accent="text-emerald-600 dark:text-emerald-400" />
         <StatCard icon={Clock} label="Total Hours" value={formatHours(stats.totalHours)} accent="text-amber-600 dark:text-amber-400" />
         <StatCard icon={Clock} label="Avg Hours / Task" value={formatHours(stats.avgHoursPerTask)} accent="text-amber-600 dark:text-amber-400" />

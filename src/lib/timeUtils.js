@@ -2,8 +2,6 @@
    UTILITIES
    ========================================================================= */
 
-import { PALETTE } from "./constants";
-
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export function pad2(n) {
@@ -62,31 +60,30 @@ export function solidStyle(hex) {
   return { backgroundColor: hex, color: "#fff" };
 }
 
-/** Deterministic color for any free-text label (e.g. a round's Type), so
-    values the user types stay visually distinct without needing a fixed list. */
-export function stringToColor(str) {
-  if (!str) return "#64748b";
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return PALETTE[Math.abs(hash) % PALETTE.length];
-}
-
 /**
- * Business-hours engine: counts only Mon-Fri, 08:00-12:00 & 13:00-17:00,
- * excluding configured holidays.
+ * Business-hours engine: counts only the enabled work sessions (default
+ * Mon-Fri, 08:00-12:00 & 13:00-17:00), excluding configured holidays.
+ * The work sessions themselves are user-editable in Settings.
  */
-export const WORK_WINDOWS = [
-  [8, 0, 12, 0],
-  [13, 0, 17, 0],
+export const DEFAULT_WORK_SESSIONS = [
+  { id: "morning", label: "Morning", start: "08:00", end: "12:00", enabled: true },
+  { id: "afternoon", label: "Afternoon", start: "13:00", end: "17:00", enabled: true },
 ];
 
-export function businessMinutesBetween(startVal, endVal, holidaySet) {
+export function parseHM(str) {
+  const [h, m] = (str || "00:00").split(":").map(Number);
+  return [h || 0, m || 0];
+}
+
+export function businessMinutesBetween(startVal, endVal, holidaySet, workSessions) {
   if (!startVal || !endVal) return 0;
   const start = new Date(startVal);
   const end = new Date(endVal);
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return 0;
+
+  const windows = (workSessions || DEFAULT_WORK_SESSIONS)
+    .filter((w) => w.enabled !== false)
+    .map((w) => [...parseHM(w.start), ...parseHM(w.end)]);
 
   let total = 0;
   const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
@@ -96,7 +93,7 @@ export function businessMinutesBetween(startVal, endVal, holidaySet) {
     const dow = cursor.getDay();
     const dateStr = formatYMD(cursor);
     if (dow !== 0 && dow !== 6 && !holidaySet.has(dateStr)) {
-      for (const [sh, sm, eh, em] of WORK_WINDOWS) {
+      for (const [sh, sm, eh, em] of windows) {
         const winStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), sh, sm);
         const winEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), eh, em);
         const overlapStart = winStart > start ? winStart : start;
@@ -120,33 +117,55 @@ export function elapsedMinutesBetween(startVal, endVal) {
   return (end - start) / 60000;
 }
 
-/** Minutes for a single session, respecting the task's business-hours toggle. */
-export function sessionMinutes(session, businessOnly, holidaySet) {
+/**
+ * Minutes for a single session. A session marked `overtime: true` always
+ * counts its full elapsed time — even while the task's "Count only Business
+ * Hours" box stays ticked — because overtime work outside normal hours still
+ * needs to be added, not eliminated.
+ */
+export function sessionMinutes(session, businessOnly, holidaySet, workSessions) {
+  if (session.overtime) return elapsedMinutesBetween(session.start, session.end);
   return businessOnly
-    ? businessMinutesBetween(session.start, session.end, holidaySet)
+    ? businessMinutesBetween(session.start, session.end, holidaySet, workSessions)
     : elapsedMinutesBetween(session.start, session.end);
 }
 
 export function taskUsesBusinessHours(task) {
   return task.trackBusinessHours !== false; // default true for legacy/undefined
 }
-export function taskTotalMinutes(task, holidaySet) {
+export function taskTotalMinutes(task, holidaySet, workSessions) {
   const businessOnly = taskUsesBusinessHours(task);
-  return (task.sessions || []).reduce((sum, s) => sum + sessionMinutes(s, businessOnly, holidaySet), 0);
+  return (task.sessions || []).reduce((sum, s) => sum + sessionMinutes(s, businessOnly, holidaySet, workSessions), 0);
 }
-export function taskTotalHours(task, holidaySet) {
-  return taskTotalMinutes(task, holidaySet) / 60;
+export function taskTotalHours(task, holidaySet, workSessions) {
+  return taskTotalMinutes(task, holidaySet, workSessions) / 60;
 }
 export function taskCompletionPct(task) {
+  if (task.status === "Completed") return 100;
   if (task.subtasks && task.subtasks.length > 0) {
     const done = task.subtasks.filter((s) => s.done).length;
     return Math.round((done / task.subtasks.length) * 100);
   }
-  return task.status === "Completed" ? 100 : task.status === "In Progress" ? 50 : 0;
+  return task.status === "In Progress" ? 50 : 0;
 }
+/** Currently overdue = still not done, and past its deadline. Completing a
+    task clears this — but does NOT mean the task was never late, see below. */
 export function isTaskOverdue(task) {
   if (!task.deadline || task.status === "Completed") return false;
   return task.deadline < todayYMD();
+}
+
+/** Was this task finished after its own deadline? Independent of whether it
+    still counts as "overdue" today — this stays true forever once completed
+    late, so lateness isn't erased just by ticking the task done. */
+export function isTaskCompletedLate(task) {
+  if (task.status !== "Completed" || !task.completedAt || !task.deadline) return false;
+  return formatYMD(new Date(task.completedAt)) > task.deadline;
+}
+export function daysLate(task) {
+  if (!isTaskCompletedLate(task)) return 0;
+  const completedDay = formatYMD(new Date(task.completedAt));
+  return Math.round((parseYMD(completedDay) - parseYMD(task.deadline)) / 86400000);
 }
 
 /** Looks up the default subtask checklist configured for a Category/Subcategory pair. */
@@ -229,7 +248,7 @@ export function median(sortedNums) {
  * Includes every subcategory defined in `categories`, even with 0 completions,
  * plus any ad-hoc subcategory still referenced by legacy tasks.
  */
-export function computeTypeStats(categories, tasks, holidaySet) {
+export function computeTypeStats(categories, tasks, holidaySet, workSchedule) {
   const groups = {};
   const ensure = (category, subcategory) => {
     const key = `${category}|||${subcategory}`;
@@ -242,7 +261,7 @@ export function computeTypeStats(categories, tasks, holidaySet) {
     .forEach((t) => ensure(t.category, t.subcategory).tasks.push(t));
 
   return Object.values(groups).map((g) => {
-    const hours = g.tasks.map((t) => taskTotalHours(t, holidaySet)).sort((a, b) => a - b);
+    const hours = g.tasks.map((t) => taskTotalHours(t, holidaySet, workSchedule)).sort((a, b) => a - b);
     const count = hours.length;
     const total = hours.reduce((s, v) => s + v, 0);
     return {

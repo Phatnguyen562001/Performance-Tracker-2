@@ -1,3 +1,7 @@
+/* =========================================================================
+   SIDEBAR
+   ========================================================================= */
+
 import React from "react";
 import {
   LayoutDashboard,
@@ -77,7 +81,7 @@ export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSign
             <ShieldCheck size={13} /> Office hours engine
           </div>
           <p className="mt-1 leading-snug">
-            Mon–Fri · 08:00–12:00 &amp; 13:00–17:00, per-task toggle. Configure holidays &amp; categories in Settings.
+            Mon–Fri, per-task toggle &amp; custom hours in Settings. Configure holidays &amp; categories there too.
           </p>
         </div>
         {user && (

@@ -55,7 +55,7 @@ export function TypeCard({ group, color, onClick }) {
   );
 }
 
-export function TypeDetailModal({ group, color, holidaySet, onClose, onOpenTask }) {
+export function TypeDetailModal({ group, color, holidaySet, workSchedule, onClose, onOpenTask }) {
   const [periodType, setPeriodType] = useState("month");
   const bucketCount = periodType === "quarter" ? 4 : 6;
   const buckets = useMemo(() => buildTrailingBuckets(periodType, bucketCount), [periodType, bucketCount]);
@@ -63,11 +63,11 @@ export function TypeDetailModal({ group, color, holidaySet, onClose, onOpenTask 
   const trend = useMemo(() => {
     return buckets.map((b) => {
       const inBucket = group.tasks.filter((t) => t.completedAt && inDateRange(new Date(t.completedAt), b));
-      const hrs = inBucket.map((t) => taskTotalHours(t, holidaySet));
+      const hrs = inBucket.map((t) => taskTotalHours(t, holidaySet, workSchedule));
       const avg = hrs.length ? hrs.reduce((s, v) => s + v, 0) / hrs.length : 0;
       return { label: b.label, completed: inBucket.length, avg: +avg.toFixed(1) };
     });
-  }, [buckets, group.tasks, holidaySet]);
+  }, [buckets, group.tasks, holidaySet, workSchedule]);
 
   const sortedTasks = useMemo(
     () => [...group.tasks].sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || "")),
@@ -170,7 +170,7 @@ export function TypeDetailModal({ group, color, holidaySet, onClose, onOpenTask 
                           {t.completedAt ? formatDateDisplay(formatYMD(new Date(t.completedAt))) : "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 font-mono text-sm text-slate-600 dark:text-slate-300">
-                          {formatHours(taskTotalHours(t, holidaySet))}
+                          {formatHours(taskTotalHours(t, holidaySet, workSchedule))}
                         </td>
                       </tr>
                     ))}
@@ -185,11 +185,11 @@ export function TypeDetailModal({ group, color, holidaySet, onClose, onOpenTask 
   );
 }
 
-export function TaskTypesView({ tasks, holidaySet, categories, categoryColors, onOpenTask }) {
+export function TaskTypesView({ tasks, holidaySet, workSchedule, categories, categoryColors, onOpenTask }) {
   const [selectedKey, setSelectedKey] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("");
 
-  const groups = useMemo(() => computeTypeStats(categories, tasks, holidaySet), [categories, tasks, holidaySet]);
+  const groups = useMemo(() => computeTypeStats(categories, tasks, holidaySet, workSchedule), [categories, tasks, holidaySet, workSchedule]);
   const visibleGroups = useMemo(
     () =>
       groups
@@ -231,6 +231,7 @@ export function TaskTypesView({ tasks, holidaySet, categories, categoryColors, o
           group={selectedGroup}
           color={categoryColors[selectedGroup.category] || "#64748b"}
           holidaySet={holidaySet}
+          workSchedule={workSchedule}
           onClose={() => setSelectedKey(null)}
           onOpenTask={(t) => {
             setSelectedKey(null);

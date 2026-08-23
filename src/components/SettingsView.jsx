@@ -462,6 +462,8 @@ export function AssignerManager({ departments, setDepartments, assigners, setAss
 export function SettingsView({
   holidays,
   setHolidays,
+  workSchedule,
+  setWorkSchedule,
   categories,
   setCategories,
   departments,
@@ -487,24 +489,52 @@ export function SettingsView({
     setHolidays(holidays.filter((h) => h !== d));
   }
 
+  function updateSession(id, patch) {
+    setWorkSchedule((ws) => ws.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  }
+
   return (
     <div className="max-w-2xl space-y-5">
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Office hours</p>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Fixed at Monday–Friday, 08:00–12:00 and 13:00–17:00. Whether a task counts only business hours or full elapsed
-          time is set per task, on the task's Time log tab.
+          Applies Monday–Friday. Edit the sessions below to match your real working hours — whether a task counts only
+          business hours or full elapsed time is still set per task, on the task's Time log tab.
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
-            <p className="text-xs text-slate-400">Morning session</p>
-            <p className="font-mono text-slate-700 dark:text-slate-200">08:00 – 12:00</p>
-          </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
-            <p className="text-xs text-slate-400">Afternoon session</p>
-            <p className="font-mono text-slate-700 dark:text-slate-200">13:00 – 17:00</p>
-          </div>
+        <div className="mt-3 space-y-2">
+          {workSchedule.map((w) => (
+            <div key={w.id} className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-indigo-600"
+                  checked={w.enabled !== false}
+                  onChange={(e) => updateSession(w.id, { enabled: e.target.checked })}
+                />
+              </label>
+              <span className="w-20 shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300">{w.label}</span>
+              <input
+                type="time"
+                className={classNames(inputClass, "w-32")}
+                value={w.start}
+                disabled={w.enabled === false}
+                onChange={(e) => updateSession(w.id, { start: e.target.value })}
+              />
+              <span className="text-slate-400">–</span>
+              <input
+                type="time"
+                className={classNames(inputClass, "w-32")}
+                value={w.end}
+                disabled={w.enabled === false}
+                onChange={(e) => updateSession(w.id, { end: e.target.value })}
+              />
+            </div>
+          ))}
         </div>
+        <p className="mt-2 text-[11px] text-slate-400">
+          Tip: to work as a single continuous block with no lunch break, uncheck "Afternoon" and set Morning to cover
+          the full day.
+        </p>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">

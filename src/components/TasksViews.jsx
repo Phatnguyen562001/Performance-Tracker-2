@@ -14,8 +14,10 @@ import {
   Square,
   Plus,
   Repeat,
+  ArrowUpDown,
+  CheckCircle2,
 } from "lucide-react";
-import { STATUSES, PRIORITY_DOT, PRIORITY_STYLES, STATUS_STYLES } from "../lib/constants";
+import { STATUSES, PRIORITY_DOT, PRIORITY_STYLES, STATUS_STYLES, SORT_OPTIONS, sortTasks } from "../lib/constants";
 import {
   classNames,
   formatYMD,
@@ -28,6 +30,8 @@ import {
   taskCompletionPct,
   taskTotalHours,
   isTaskOverdue,
+  isTaskCompletedLate,
+  daysLate,
   taskUsesBusinessHours,
   softStyle,
   solidStyle,
@@ -39,11 +43,13 @@ import { FilterBar } from "./FilterBar";
    TASK CARD (used in Kanban)
    ========================================================================= */
 
-export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDragStart, onToggleTimer }) {
+export function TaskCard({ task, holidaySet, workSchedule, catColor, onClick, draggable, onDragStart, onToggleTimer, onStatusChange }) {
   const pct = taskCompletionPct(task);
   const overdue = isTaskOverdue(task);
-  const hours = taskTotalHours(task, holidaySet);
+  const completedLate = isTaskCompletedLate(task);
+  const hours = taskTotalHours(task, holidaySet, workSchedule);
   const isRunning = !!task.runningStart;
+  const isDone = task.status === "Completed";
   return (
     <div
       draggable={draggable}
@@ -57,6 +63,11 @@ export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDra
         </Badge>
         <span className={classNames("h-1.5 w-1.5 rounded-full", PRIORITY_DOT[task.priority])} title={task.priority} />
         {!taskUsesBusinessHours(task) && <Clock size={11} className="text-amber-500" titleAccess="Elapsed time" />}
+        {completedLate && (
+          <span className="ml-auto flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Completed ${daysLate(task)} day(s) after deadline`}>
+            <Clock size={10} /> {daysLate(task)}d late
+          </span>
+        )}
       </div>
       <p className="text-sm font-medium leading-snug text-slate-800 dark:text-slate-100">{task.title}</p>
       <p className="mt-0.5 truncate text-xs text-slate-400">{task.subcategory}</p>
@@ -64,7 +75,12 @@ export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDra
         <ProgressBar pct={pct} color={catColor} />
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-        <span className={classNames("flex items-center gap-1", overdue && "font-medium text-rose-600 dark:text-rose-400")}>
+        <span
+          className={classNames(
+            "flex items-center gap-1",
+            overdue ? "font-medium text-rose-600 dark:text-rose-400" : completedLate && "font-medium text-amber-600 dark:text-amber-400"
+          )}
+        >
           <CalendarDays size={12} /> {formatDateDisplay(task.deadline)}
         </span>
         <span className="flex items-center gap-2 font-mono">
@@ -78,28 +94,45 @@ export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDra
           </span>
         </span>
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleTimer(task.id);
-        }}
-        className={classNames(
-          "mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition",
-          isRunning
-            ? "bg-rose-600 text-white hover:bg-rose-500"
-            : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
-        )}
-      >
-        {isRunning ? (
-          <>
-            <Square size={12} className="fill-current" /> End (started {formatClockTime(task.runningStart)})
-          </>
-        ) : (
-          <>
-            <Play size={12} className="fill-current" /> Start
-          </>
-        )}
-      </button>
+      <div className="mt-2.5 flex items-center gap-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStatusChange(task.id, isDone ? "In Progress" : "Completed");
+          }}
+          title={isDone ? "Completed — click to un-complete" : "Mark as Completed"}
+          className={classNames(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition",
+            isDone
+              ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500/50"
+              : "border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:hover:border-emerald-500/50"
+          )}
+        >
+          <CheckCircle2 size={15} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleTimer(task.id);
+          }}
+          className={classNames(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition",
+            isRunning
+              ? "bg-rose-600 text-white hover:bg-rose-500"
+              : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
+          )}
+        >
+          {isRunning ? (
+            <>
+              <Square size={12} className="fill-current" /> End (started {formatClockTime(task.runningStart)})
+            </>
+          ) : (
+            <>
+              <Play size={12} className="fill-current" /> Start
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -109,7 +142,7 @@ export function TaskCard({ task, holidaySet, catColor, onClick, draggable, onDra
    TASKS VIEW: TABLE / KANBAN / CALENDAR
    ========================================================================= */
 
-export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, onOpen, onToggleTimer }) {
+export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, assignerDeptMap, onOpen, onToggleTimer, onStatusChange }) {
   if (tasks.length === 0) {
     return <EmptyState icon={ListChecks} title="No tasks found" description="Try adjusting your filters or create a new task to get started." />;
   }
@@ -118,7 +151,7 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
       <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
         <thead className="bg-slate-50 dark:bg-slate-900/60">
           <tr>
-            {["Task", "Category", "Priority", "Status", "Assigner", "Deadline", "Progress", "Hours", "Timer"].map((h) => (
+            {["Task", "Category", "Priority", "Status", "Assigner", "Deadline", "Progress", "Hours", "Actions"].map((h) => (
               <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {h}
               </th>
@@ -129,9 +162,11 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
           {tasks.map((t) => {
             const pct = taskCompletionPct(t);
             const overdue = isTaskOverdue(t);
-            const hours = taskTotalHours(t, holidaySet);
+            const completedLate = isTaskCompletedLate(t);
+            const hours = taskTotalHours(t, holidaySet, workSchedule);
             const color = categoryColors[t.category] || "#64748b";
             const isRunning = !!t.runningStart;
+            const isDone = t.status === "Completed";
             return (
               <tr
                 key={t.id}
@@ -165,10 +200,21 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
                   {assignerDeptMap[t.assigner] && <span className="ml-1.5 text-xs text-slate-400">({assignerDeptMap[t.assigner]})</span>}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm">
-                  <span className={classNames("flex items-center gap-1", overdue ? "font-medium text-rose-600 dark:text-rose-400" : "text-slate-600 dark:text-slate-300")}>
+                  <span
+                    className={classNames(
+                      "flex items-center gap-1",
+                      overdue
+                        ? "font-medium text-rose-600 dark:text-rose-400"
+                        : completedLate
+                        ? "font-medium text-amber-600 dark:text-amber-400"
+                        : "text-slate-600 dark:text-slate-300"
+                    )}
+                  >
                     {overdue && <AlertTriangle size={12} />}
+                    {completedLate && <Clock size={12} />}
                     {formatDateDisplay(t.deadline)}
                   </span>
+                  {completedLate && <p className="text-[10px] text-amber-500">Completed {daysLate(t)}d late</p>}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -185,28 +231,45 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleTimer(t.id);
-                    }}
-                    className={classNames(
-                      "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
-                      isRunning
-                        ? "bg-rose-600 text-white hover:bg-rose-500"
-                        : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
-                    )}
-                  >
-                    {isRunning ? (
-                      <>
-                        <Square size={11} className="fill-current" /> End ({formatClockTime(t.runningStart)})
-                      </>
-                    ) : (
-                      <>
-                        <Play size={11} className="fill-current" /> Start
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStatusChange(t.id, isDone ? "In Progress" : "Completed");
+                      }}
+                      title={isDone ? "Completed — click to un-complete" : "Mark as Completed"}
+                      className={classNames(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-md border transition",
+                        isDone
+                          ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500/50"
+                          : "border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:hover:border-emerald-500/50"
+                      )}
+                    >
+                      <CheckCircle2 size={15} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleTimer(t.id);
+                      }}
+                      className={classNames(
+                        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+                        isRunning
+                          ? "bg-rose-600 text-white hover:bg-rose-500"
+                          : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
+                      )}
+                    >
+                      {isRunning ? (
+                        <>
+                          <Square size={11} className="fill-current" /> End ({formatClockTime(t.runningStart)})
+                        </>
+                      ) : (
+                        <>
+                          <Play size={11} className="fill-current" /> Start
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
@@ -217,7 +280,7 @@ export function TaskTable({ tasks, holidaySet, categoryColors, assignerDeptMap, 
   );
 }
 
-export function KanbanBoard({ tasks, holidaySet, categoryColors, onOpen, onStatusChange, onToggleTimer }) {
+export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, onOpen, onStatusChange, onToggleTimer }) {
   const [draggingId, setDraggingId] = useState(null);
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -247,6 +310,7 @@ export function KanbanBoard({ tasks, holidaySet, categoryColors, onOpen, onStatu
                   <TaskCard
                     task={t}
                     holidaySet={holidaySet}
+                    workSchedule={workSchedule}
                     catColor={categoryColors[t.category] || "#64748b"}
                     onClick={() => onOpen(t)}
                     draggable
@@ -255,6 +319,7 @@ export function KanbanBoard({ tasks, holidaySet, categoryColors, onOpen, onStatu
                       setDraggingId(t.id);
                     }}
                     onToggleTimer={onToggleTimer}
+                    onStatusChange={onStatusChange}
                   />
                 </div>
               ))}
@@ -360,7 +425,8 @@ export function CalendarView({ tasks, categoryColors, onOpen }) {
                     style={solidStyle(categoryColors[t.category] || "#64748b")}
                     className={classNames(
                       "block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium",
-                      isTaskOverdue(t) && "ring-1 ring-rose-400"
+                      isTaskOverdue(t) && "ring-1 ring-rose-400",
+                      isTaskCompletedLate(t) && "ring-1 ring-amber-400"
                     )}
                   >
                     {t.title}
@@ -384,6 +450,7 @@ export function CalendarView({ tasks, categoryColors, onOpen }) {
 export function TasksView({
   tasks,
   holidaySet,
+  workSchedule,
   categories,
   categoryColors,
   assigners,
@@ -403,6 +470,7 @@ export function TasksView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [monthCursor, setMonthCursor] = useState(null); // null = all months
   const [quickTitle, setQuickTitle] = useState("");
+  const [sortBy, setSortBy] = useState("");
 
   function submitQuickAdd(e) {
     e.preventDefault();
@@ -412,7 +480,7 @@ export function TasksView({
   }
 
   const filtered = useMemo(() => {
-    return tasks.filter((t) => {
+    const result = tasks.filter((t) => {
       if (search && !`${t.title} ${t.description}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (filters.category && t.category !== filters.category) return false;
       if (filters.subcategory && t.subcategory !== filters.subcategory) return false;
@@ -425,7 +493,8 @@ export function TasksView({
       if (monthCursor && (!t.deadline || !t.deadline.startsWith(monthKey(monthCursor)))) return false;
       return true;
     });
-  }, [tasks, search, filters, monthCursor, assignerDeptMap]);
+    return sortTasks(result, sortBy);
+  }, [tasks, search, filters, monthCursor, assignerDeptMap, sortBy]);
 
   function shiftMonthCursor(dir) {
     setMonthCursor((cur) => {
@@ -505,6 +574,22 @@ export function TasksView({
               </IconButton>
             </div>
           )}
+          {viewMode !== "calendar" && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900/60">
+              <ArrowUpDown size={13} className="shrink-0 text-slate-400" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="bg-transparent py-1 text-xs font-medium text-slate-600 outline-none dark:text-slate-300"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 dark:text-slate-400">{filtered.length} task(s)</span>
@@ -527,16 +612,19 @@ export function TasksView({
         <TaskTable
           tasks={filtered}
           holidaySet={holidaySet}
+          workSchedule={workSchedule}
           categoryColors={categoryColors}
           assignerDeptMap={assignerDeptMap}
           onOpen={onOpen}
           onToggleTimer={onToggleTimer}
+          onStatusChange={onStatusChange}
         />
       )}
       {viewMode === "kanban" && (
         <KanbanBoard
           tasks={filtered}
           holidaySet={holidaySet}
+          workSchedule={workSchedule}
           categoryColors={categoryColors}
           onOpen={onOpen}
           onStatusChange={onStatusChange}

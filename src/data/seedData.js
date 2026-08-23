@@ -79,9 +79,9 @@ export function buildSeedTasks() {
       ],
       sessions: [{ id: uid(), start: dt(-2, 9, 0), end: dt(-2, 11, 30) }, { id: uid(), start: dt(-1, 14, 0), end: dt(-1, 17, 0) }],
       rounds: [
-        { id: uid(), date: mk(-6), label: "Internal", note: "Supervisor reviewed draft comments, agreed to proceed" },
-        { id: uid(), date: mk(-5), label: "Sent", note: "V1 sent to vendor for comments" },
-        { id: uid(), date: mk(-2), label: "Received", note: "Vendor returned with counter-proposals on liability cap" },
+        { id: uid(), date: mk(-6), label: "Internal", recipient: "Tran Thi B - Supervisor", note: "Supervisor reviewed draft comments, agreed to proceed" },
+        { id: uid(), date: mk(-5), label: "Sent", recipient: "Vendor Legal Team", note: "V1 sent to vendor for comments" },
+        { id: uid(), date: mk(-2), label: "Received", recipient: "Vendor Legal Team", note: "Vendor returned with counter-proposals on liability cap" },
       ],
     }),
     base({

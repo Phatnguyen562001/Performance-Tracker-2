@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { ListChecks, CheckCircle2, TrendingUp, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { ListChecks, CheckCircle2, TrendingUp, Clock, ChevronLeft, ChevronRight, Target } from "lucide-react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -44,7 +44,7 @@ export function ChartCard({ title, children, className }) {
   );
 }
 
-export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptMap, theme }) {
+export function AnalyticsView({ tasks, holidaySet, workSchedule, categoryColors, assignerDeptMap, theme }) {
   const [periodType, setPeriodType] = useState("month");
   const [anchor, setAnchor] = useState(() => new Date());
   const range = useMemo(() => getPeriodRange(periodType, anchor), [periodType, anchor]);
@@ -71,11 +71,11 @@ export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptM
       const businessOnly = taskUsesBusinessHours(t);
       (t.sessions || []).forEach((s) => {
         if (!s.start) return;
-        if (inDateRange(new Date(s.start), range)) total += sessionMinutes(s, businessOnly, holidaySet) / 60;
+        if (inDateRange(new Date(s.start), range)) total += sessionMinutes(s, businessOnly, holidaySet, workSchedule) / 60;
       });
     });
     return total;
-  }, [tasks, range, holidaySet]);
+  }, [tasks, range, holidaySet, workSchedule]);
 
   const kpis = useMemo(
     () => ({
@@ -106,17 +106,17 @@ export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptM
         if (t.status === "Completed" && t.completedAt && inDateRange(new Date(t.completedAt), b)) completed += 1;
         const businessOnly = taskUsesBusinessHours(t);
         (t.sessions || []).forEach((s) => {
-          if (s.start && inDateRange(new Date(s.start), b)) hours += sessionMinutes(s, businessOnly, holidaySet) / 60;
+          if (s.start && inDateRange(new Date(s.start), b)) hours += sessionMinutes(s, businessOnly, holidaySet, workSchedule) / 60;
         });
       });
       return { label: b.label, completed, hours: +hours.toFixed(1) };
     });
-  }, [tasks, periodType, anchor, holidaySet]);
+  }, [tasks, periodType, anchor, holidaySet, workSchedule]);
 
   const avgBySubcategory = useMemo(() => {
     const bySub = {};
     periodTasks.forEach((t) => {
-      const h = taskTotalHours(t, holidaySet);
+      const h = taskTotalHours(t, holidaySet, workSchedule);
       if (h <= 0) return;
       if (!bySub[t.subcategory]) bySub[t.subcategory] = { hours: 0, count: 0 };
       bySub[t.subcategory].hours += h;
@@ -126,7 +126,38 @@ export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptM
       .map(([name, v]) => ({ name, avg: +(v.hours / v.count).toFixed(1) }))
       .sort((a, b) => b.avg - a.avg)
       .slice(0, 8);
-  }, [periodTasks, holidaySet]);
+  }, [periodTasks, holidaySet, workSchedule]);
+
+  // Only tasks where the (optional) Estimated time was filled in are counted —
+  // lets you see how realistic your estimates tend to be, per task type.
+  const estimateVsActual = useMemo(() => {
+    const bySub = {};
+    periodTasks.forEach((t) => {
+      if (!t.estimate || t.estimate <= 0) return;
+      const actual = taskTotalHours(t, holidaySet, workSchedule);
+      if (!bySub[t.subcategory]) bySub[t.subcategory] = { estSum: 0, actSum: 0, count: 0 };
+      bySub[t.subcategory].estSum += t.estimate;
+      bySub[t.subcategory].actSum += actual;
+      bySub[t.subcategory].count += 1;
+    });
+    return Object.entries(bySub)
+      .map(([name, v]) => ({
+        name,
+        Estimated: +(v.estSum / v.count).toFixed(1),
+        Actual: +(v.actSum / v.count).toFixed(1),
+        count: v.count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [periodTasks, holidaySet, workSchedule]);
+
+  const estimateAccuracy = useMemo(() => {
+    const withEstimate = periodTasks.filter((t) => t.estimate && t.estimate > 0);
+    if (withEstimate.length === 0) return null;
+    const totalEst = withEstimate.reduce((s, t) => s + t.estimate, 0);
+    const totalAct = withEstimate.reduce((s, t) => s + taskTotalHours(t, holidaySet, workSchedule), 0);
+    return { count: withEstimate.length, diffPct: totalEst > 0 ? ((totalAct - totalEst) / totalEst) * 100 : 0 };
+  }, [periodTasks, holidaySet, workSchedule]);
 
   const topAssigners = useMemo(() => {
     const map = {};
@@ -186,11 +217,18 @@ export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptM
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard icon={ListChecks} label={`Tasks (${periodLabel(periodType, anchor)})`} value={kpis.total} />
         <StatCard icon={CheckCircle2} label="Completed" value={kpis.completed} accent="text-emerald-600 dark:text-emerald-400" />
         <StatCard icon={Clock} label="Hours logged" value={formatHours(kpis.hours)} accent="text-amber-600 dark:text-amber-400" />
         <StatCard icon={TrendingUp} label="Avg hours / task" value={formatHours(kpis.avgHours)} accent="text-indigo-600 dark:text-indigo-400" />
+        <StatCard
+          icon={Target}
+          label="Estimate accuracy"
+          value={estimateAccuracy ? `${estimateAccuracy.diffPct > 0 ? "+" : ""}${estimateAccuracy.diffPct.toFixed(0)}%` : "—"}
+          sub={estimateAccuracy ? `${estimateAccuracy.count} task(s) with an estimate` : "No estimates logged yet"}
+          accent={estimateAccuracy && Math.abs(estimateAccuracy.diffPct) > 20 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -258,6 +296,26 @@ export function AnalyticsView({ tasks, holidaySet, categoryColors, assignerDeptM
                     <Cell key={entry.name} fill={PALETTE[i % PALETTE.length]} />
                   ))}
                 </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Estimated vs Actual hours by task type">
+          {estimateVsActual.length === 0 ? (
+            <p className="py-16 text-center text-sm text-slate-400">
+              No tasks with an Estimated time filled in yet (set it on a task's Time log tab).
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={estimateVsActual} layout="vertical" margin={{ left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 12, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "dark" ? "#1e293b" : "#f8fafc" }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />
+                <Bar dataKey="Estimated" fill="#94a3b8" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="Actual" fill="#4f46e5" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { X, AlertTriangle, GripVertical, CheckCircle2, Circle, Trash2, Plus, Clock, ChevronRight, Repeat } from "lucide-react";
-import { PRIORITIES, STATUSES, MAX_SUBTASKS, ROUND_TYPE_SUGGESTIONS } from "../lib/constants";
+import { X, AlertTriangle, GripVertical, CheckCircle2, Circle, Trash2, Plus, Clock, ChevronRight, Zap } from "lucide-react";
+import { PRIORITIES, STATUSES, MAX_SUBTASKS, ROUND_TYPE_SUGGESTIONS, stringToColor } from "../lib/constants";
 import {
   uid,
   classNames,
@@ -11,15 +11,21 @@ import {
   formatClockTime,
   formatDateDisplay,
   getTemplateSubtasks,
-  stringToColor,
+  isTaskCompletedLate,
+  daysLate,
 } from "../lib/timeUtils";
 import { Field, IconButton, inputClass } from "./ui";
+
+/* =========================================================================
+   TASK MODAL (create / edit / detail)
+   ========================================================================= */
+
 
 /* =========================================================================
    ROUNDS FLOW CHART — visual chain of a task's back-and-forth cycles
    ========================================================================= */
 
-function RoundsFlow({ rounds }) {
+export function RoundsFlow({ rounds }) {
   if (rounds.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
@@ -62,11 +68,7 @@ function RoundsFlow({ rounds }) {
   );
 }
 
-/* =========================================================================
-   TASK MODAL (create / edit / detail)
-   ========================================================================= */
-
-export function TaskModal({ task, categories, assigners, onClose, onSave, onDelete, holidaySet }) {
+export function TaskModal({ task, categories, assigners, onClose, onSave, onDelete, holidaySet, workSchedule }) {
   const isEdit = !!task;
   const firstCat = categories[0]?.name || "";
   const firstSub = categories[0]?.subcategories[0]?.name || "";
@@ -86,6 +88,7 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
       subtasks: task?.subtasks ? [...task.subtasks] : getTemplateSubtasks(categories, initCategory, initSubcategory),
       sessions: task?.sessions ? [...task.sessions] : [],
       rounds: task?.rounds ? [...task.rounds] : [],
+      estimate: task?.estimate ?? "",
     };
   });
   const [tab, setTab] = useState("details");
@@ -97,8 +100,8 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
   }, [categories, form.category]);
 
   const totalHours = useMemo(() => {
-    return form.sessions.reduce((sum, s) => sum + sessionMinutes(s, form.trackBusinessHours, holidaySet), 0) / 60;
-  }, [form.sessions, form.trackBusinessHours, holidaySet]);
+    return form.sessions.reduce((sum, s) => sum + sessionMinutes(s, form.trackBusinessHours, holidaySet, workSchedule), 0) / 60;
+  }, [form.sessions, form.trackBusinessHours, holidaySet, workSchedule]);
 
   function update(patch) {
     setForm((f) => ({ ...f, ...patch }));
@@ -165,7 +168,7 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
     const now = new Date();
     setForm((f) => ({
       ...f,
-      sessions: [...f.sessions, { id: uid(), start: toDateTimeLocalValue(now), end: toDateTimeLocalValue(now) }],
+      sessions: [...f.sessions, { id: uid(), start: toDateTimeLocalValue(now), end: toDateTimeLocalValue(now), overtime: false }],
     }));
   }
   function updateSession(id, patch) {
@@ -182,7 +185,8 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
       return;
     }
     setError("");
-    onSave({ ...form, title: form.title.trim() });
+    const estimateNum = form.estimate === "" || form.estimate === null ? null : Number(form.estimate);
+    onSave({ ...form, title: form.title.trim(), estimate: estimateNum && estimateNum > 0 ? estimateNum : null });
   }
 
   const tabs = [
@@ -271,6 +275,11 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                     value={form.deadline}
                     onChange={(e) => update({ deadline: e.target.value })}
                   />
+                  {isEdit && isTaskCompletedLate(task) && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                      <Clock size={11} /> Completed {daysLate(task)} day(s) after this deadline.
+                    </p>
+                  )}
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -480,8 +489,33 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                   {formatHours(totalHours)}
                 </span>
               </div>
+
+              <Field label="Estimated time (optional)">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    className={classNames(inputClass, "w-28")}
+                    value={form.estimate}
+                    onChange={(e) => update({ estimate: e.target.value })}
+                    placeholder="e.g. 4"
+                  />
+                  <span className="text-xs text-slate-400">hours</span>
+                  {form.estimate !== "" && Number(form.estimate) > 0 && (
+                    <span className="text-xs text-slate-400">
+                      ({totalHours > Number(form.estimate) ? "+" : ""}
+                      {(totalHours - Number(form.estimate)).toFixed(1)}h vs. logged so far)
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Not shown on the task list — used only to compare estimate vs. actual on the Analytics page.
+                </p>
+              </Field>
+
               {form.sessions.map((s) => {
-                const h = sessionMinutes(s, form.trackBusinessHours, holidaySet) / 60;
+                const h = sessionMinutes(s, form.trackBusinessHours, holidaySet, workSchedule) / 60;
                 return (
                   <div key={s.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                     <div className="grid grid-cols-2 gap-2">
@@ -502,8 +536,20 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                         />
                       </Field>
                     </div>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-amber-600"
+                        checked={!!s.overtime}
+                        onChange={(e) => updateSession(s.id, { overtime: e.target.checked })}
+                      />
+                      <Zap size={12} className="text-amber-500" />
+                      Overtime — count full hours, even outside business hours
+                    </label>
                     <div className="mt-2 flex items-center justify-between">
-                      <span className="font-mono text-xs text-slate-500 dark:text-slate-400">= {formatHours(h)} logged</span>
+                      <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                        = {formatHours(h)} logged {s.overtime && <span className="text-amber-600 dark:text-amber-400">(overtime)</span>}
+                      </span>
                       <IconButton danger title="Remove session" onClick={() => removeSession(s.id)}>
                         <Trash2 size={14} />
                       </IconButton>
