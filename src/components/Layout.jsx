@@ -16,6 +16,8 @@ import {
   Sun,
   Moon,
   Plus,
+  Sparkles,
+  CalendarDays,
   LogOut,
 } from "lucide-react";
 import { classNames } from "../lib/timeUtils";
@@ -27,6 +29,8 @@ import { classNames } from "../lib/timeUtils";
 export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSignOut }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "everyday", label: "Everyday", icon: Sparkles },
+    { id: "calendar", label: "Calendar", icon: CalendarDays },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "types", label: "Task Types", icon: Layers },
     { id: "analytics", label: "Analytics", icon: BarChart3 },

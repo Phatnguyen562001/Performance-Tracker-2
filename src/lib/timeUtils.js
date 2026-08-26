@@ -39,6 +39,20 @@ export function formatClockTime(dateTimeLocalValue) {
   if (isNaN(d.getTime())) return "—";
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+/** "3 days ago" once at least a full day has passed, otherwise "5 hours ago" —
+    minutes are never shown, matching how coarse this staleness signal needs to be. */
+export function formatRelativeTime(isoString) {
+  if (!isoString) return null;
+  const then = new Date(isoString);
+  if (isNaN(then.getTime())) return null;
+  const diffMs = Date.now() - then.getTime();
+  if (diffMs < 0) return "Just now";
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays >= 1) return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  if (diffHours >= 1) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  return "Just now";
+}
 export function monthKey(d) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
@@ -300,5 +314,39 @@ export function buildTrailingBuckets(type, count) {
     }
   }
   return buckets;
+}
+
+/** A stable "quote of the day" — same quote all day, cycles through the year. */
+export const DAILY_QUOTES = [
+  "Discipline is choosing between what you want now and what you want most.",
+  "Small daily habits compound into results that feel sudden to everyone else.",
+  "Do the hard task first. The rest of the day gets easier.",
+  "Consistency beats intensity — show up again tomorrow.",
+  "Well done is better than well said. — Benjamin Franklin",
+  "The secret of getting ahead is getting started. — Mark Twain",
+  "Details create the big picture. — Sanford I. Weill",
+  "A goal without a plan is just a wish.",
+  "Progress, not perfection.",
+  "You don't have to see the whole staircase, just take the first step. — Martin Luther King Jr.",
+  "Order and simplicity are the first steps toward mastery.",
+  "Slow is smooth, smooth is fast.",
+  "What gets measured gets managed. — Peter Drucker",
+  "The best time to start was yesterday. The next best time is now.",
+  "Focus on being productive instead of busy.",
+  "Integrity is doing the right thing when no one is watching. — C.S. Lewis",
+  "Every task finished is a promise kept — to yourself first.",
+  "Clarity comes from action, not thought.",
+  "Little by little, a little becomes a lot.",
+  "Today's effort is tomorrow's ease.",
+  "Precision today prevents problems tomorrow.",
+  "Momentum is built one checked box at a time.",
+  "Patience and persistence outlast talent that quits early.",
+  "Take care of the minutes, and the hours will take care of themselves. — Lord Chesterfield",
+];
+export function getQuoteOfDay() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - start) / 86400000);
+  return DAILY_QUOTES[((dayOfYear % DAILY_QUOTES.length) + DAILY_QUOTES.length) % DAILY_QUOTES.length];
 }
 

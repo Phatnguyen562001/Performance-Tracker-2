@@ -15,12 +15,21 @@ import {
 import { useLocalStorage } from "./lib/storage";
 import { useAuth } from "./lib/useAuth";
 import { useCloudDoc, makeFieldState } from "./lib/useCloudState";
-import { buildSeedCategories, buildSeedDepartments, buildSeedAssigners, buildSeedTasks } from "./data/seedData";
+import {
+  buildSeedCategories,
+  buildSeedDepartments,
+  buildSeedAssigners,
+  buildSeedTasks,
+  buildSeedEverydayTasks,
+  buildSeedEvents,
+} from "./data/seedData";
 
 import { Sidebar, TopBar } from "./components/Layout";
 import { Login, LoadingScreen } from "./components/Login";
 import { TaskModal } from "./components/TaskModal";
 import { TasksView } from "./components/TasksViews";
+import { CalendarPageView } from "./components/CalendarPageView";
+import { EverydayView } from "./components/EverydayView";
 import { DashboardView } from "./components/DashboardView";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { TaskTypesView } from "./components/TaskTypesView";
@@ -36,10 +45,10 @@ export default function App() {
   const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.theme, "light");
 
   // One Firestore document per signed-in user holds tasks + categories +
-  // departments + assigners + holidays + workSchedule. These field-scoped
-  // [value, setValue] pairs behave exactly like the old useLocalStorage ones,
-  // so every function below (saveTask, deleteTask, importData, ...) needed
-  // no changes at all.
+  // departments + assigners + holidays + workSchedule + everyday tasks/
+  // completions + calendar events. These field-scoped [value, setValue] pairs
+  // behave exactly like the old useLocalStorage ones, so every function below
+  // (saveTask, deleteTask, importData, ...) needed no changes at all.
   const [cloudDoc, setCloudDoc] = useCloudDoc(user?.uid);
   const [tasks, setTasks] = makeFieldState(cloudDoc, setCloudDoc, "tasks", null);
   const [categories, setCategories] = makeFieldState(cloudDoc, setCloudDoc, "categories", null);
@@ -47,6 +56,9 @@ export default function App() {
   const [assigners, setAssigners] = makeFieldState(cloudDoc, setCloudDoc, "assigners", null);
   const [holidays, setHolidays] = makeFieldState(cloudDoc, setCloudDoc, "holidays", []);
   const [workSchedule, setWorkSchedule] = makeFieldState(cloudDoc, setCloudDoc, "workSchedule", DEFAULT_WORK_SESSIONS);
+  const [everydayTasks, setEverydayTasks] = makeFieldState(cloudDoc, setCloudDoc, "everydayTasks", null);
+  const [everydayCompletions, setEverydayCompletions] = makeFieldState(cloudDoc, setCloudDoc, "everydayCompletions", {});
+  const [events, setEvents] = makeFieldState(cloudDoc, setCloudDoc, "events", null);
 
   const [view, setView] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -76,6 +88,9 @@ export default function App() {
         assigners: buildSeedAssigners(),
         holidays: [],
         workSchedule: DEFAULT_WORK_SESSIONS,
+        everydayTasks: buildSeedEverydayTasks(),
+        everydayCompletions: {},
+        events: buildSeedEvents(),
       });
     }
   }, [user, cloudDoc, setCloudDoc]);
@@ -84,6 +99,8 @@ export default function App() {
   const safeCategories = categories || [];
   const safeDepartments = departments || [];
   const safeAssigners = assigners || [];
+  const safeEverydayTasks = everydayTasks || [];
+  const safeEvents = events || [];
   const holidaySet = useMemo(() => new Set(holidays), [holidays]);
   const categoryColors = useMemo(() => {
     const m = {};
@@ -96,6 +113,7 @@ export default function App() {
 
   const saveTask = useCallback(
     (data) => {
+      const now = new Date().toISOString();
       if (modalTask && modalTask.id) {
         setTasks((prev) =>
           prev.map((t) => {
@@ -103,7 +121,7 @@ export default function App() {
             let completedAt = t.completedAt;
             if (data.status === "Completed" && t.status !== "Completed") completedAt = new Date().toISOString();
             if (data.status !== "Completed") completedAt = null;
-            return { ...t, ...data, completedAt };
+            return { ...t, ...data, completedAt, updatedAt: now };
           })
         );
       } else {
@@ -112,8 +130,9 @@ export default function App() {
           {
             ...data,
             id: uid(),
-            createdAt: new Date().toISOString(),
-            completedAt: data.status === "Completed" ? new Date().toISOString() : null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: data.status === "Completed" ? now : null,
           },
         ]);
       }
@@ -147,6 +166,19 @@ export default function App() {
     clearTimeout(pendingDelete.timerId);
     setTasks((prev) => [...prev, pendingDelete.task]);
     setPendingDelete(null);
+  }
+
+  function saveEvent(data) {
+    setEvents((prev) => {
+      const list = prev || [];
+      if (data.id && list.some((e) => e.id === data.id)) {
+        return list.map((e) => (e.id === data.id ? { ...e, ...data } : e));
+      }
+      return [...list, { ...data, id: uid() }];
+    });
+  }
+  function deleteEvent(id) {
+    setEvents((prev) => (prev || []).filter((e) => e.id !== id));
   }
 
   const changeStatus = useCallback(
@@ -197,6 +229,7 @@ export default function App() {
       if (!trimmed) return;
       const firstCat = safeCategories[0];
       const firstSub = firstCat?.subcategories[0];
+      const now = new Date().toISOString();
       setTasks((prev) => [
         ...(prev || []),
         {
@@ -212,7 +245,8 @@ export default function App() {
           trackBusinessHours: true,
           subtasks: firstSub ? getTemplateSubtasks(safeCategories, firstCat.name, firstSub.name) : [],
           sessions: [],
-          createdAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
           completedAt: null,
         },
       ]);
@@ -223,7 +257,7 @@ export default function App() {
   function exportData() {
     const payload = {
       app: "legal-performance-tracker",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       tasks: safeTasks,
       categories: safeCategories,
@@ -231,6 +265,9 @@ export default function App() {
       assigners: safeAssigners,
       holidays,
       workSchedule,
+      everydayTasks: safeEverydayTasks,
+      everydayCompletions,
+      events: safeEvents,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -267,10 +304,14 @@ export default function App() {
       setTasks(data.tasks);
       setCategories(data.categories);
       if (Array.isArray(data.holidays)) setHolidays(data.holidays);
-      // Older backups (v1/v2) predate Departments & Assigners / Work Schedule — keep current ones if the file has none.
+      // Older backups predate later fields (Departments & Assigners / Work Schedule /
+      // Everyday / Calendar events) — keep current values if the file has none.
       if (Array.isArray(data.departments)) setDepartments(data.departments);
       if (Array.isArray(data.assigners)) setAssigners(data.assigners);
       if (Array.isArray(data.workSchedule)) setWorkSchedule(data.workSchedule);
+      if (Array.isArray(data.everydayTasks)) setEverydayTasks(data.everydayTasks);
+      if (data.everydayCompletions && typeof data.everydayCompletions === "object") setEverydayCompletions(data.everydayCompletions);
+      if (Array.isArray(data.events)) setEvents(data.events);
     };
     reader.readAsText(file);
   }
@@ -324,6 +365,8 @@ export default function App() {
 
   const titles = {
     dashboard: ["Dashboard", "Overview of your legal & compliance performance"],
+    everyday: ["Everyday", "Small daily habits — separate from your regular tasks"],
+    calendar: ["Calendar", "Task deadlines and your own plans, in one place"],
     tasks: ["Tasks", "Manage, filter and track every task"],
     types: ["Task Types", "Performance measured separately per Task Type (Subcategory)"],
     analytics: ["Analytics", "Trends across time, category and workload"],
@@ -359,6 +402,24 @@ export default function App() {
                 categoryCount={safeCategories.length}
                 onOpen={(t) => setModalTask(t)}
                 onViewTypes={() => setView("types")}
+              />
+            )}
+            {view === "everyday" && (
+              <EverydayView
+                everydayTasks={safeEverydayTasks}
+                everydayCompletions={everydayCompletions}
+                setEverydayTasks={setEverydayTasks}
+                setEverydayCompletions={setEverydayCompletions}
+              />
+            )}
+            {view === "calendar" && (
+              <CalendarPageView
+                tasks={safeTasks}
+                events={safeEvents}
+                categoryColors={categoryColors}
+                onOpenTask={(t) => setModalTask(t)}
+                onSaveEvent={saveEvent}
+                onDeleteEvent={deleteEvent}
               />
             )}
             {view === "tasks" && (
@@ -422,6 +483,9 @@ export default function App() {
                   setDepartments(buildSeedDepartments());
                   setAssigners(buildSeedAssigners());
                   setWorkSchedule(DEFAULT_WORK_SESSIONS);
+                  setEverydayTasks(buildSeedEverydayTasks());
+                  setEverydayCompletions({});
+                  setEvents(buildSeedEvents());
                 }}
                 onExportData={exportData}
                 onImportData={importData}

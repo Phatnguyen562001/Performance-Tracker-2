@@ -46,6 +46,23 @@ export function buildSeedAssigners() {
   ];
 }
 
+export function buildSeedEverydayTasks() {
+  return [
+    { id: uid(), title: "Check emails & urgent notices", note: "Scan inbox first thing — flag anything with a court/regulatory deadline." },
+    { id: uid(), title: "Review today's deadlines", note: "Glance at the Dashboard's Upcoming Deadlines list." },
+    { id: uid(), title: "Log time for yesterday", note: "Make sure yesterday's work sessions are all entered before they're forgotten." },
+  ];
+}
+
+export function buildSeedEvents() {
+  const today = new Date();
+  const mk = (offsetDays) => formatYMD(addDays(today, offsetDays));
+  return [
+    { id: uid(), title: "Weekly team sync", date: mk(2), time: "09:30", note: "Quick status round — no prep needed." },
+    { id: uid(), title: "Call with vendor legal team", date: mk(4), time: "14:00", note: "" },
+  ];
+}
+
 export function buildSeedTasks() {
   const today = new Date();
   const mk = (offsetDays) => formatYMD(addDays(today, offsetDays));

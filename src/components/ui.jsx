@@ -1,5 +1,7 @@
-import React from "react";
-import { classNames } from "../lib/timeUtils";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { CheckCircle2, Clock, Repeat, Target, UserCog } from "lucide-react";
+import { classNames, taskCompletionPct, formatHours, formatRelativeTime } from "../lib/timeUtils";
+import { stringToColor } from "../lib/constants";
 
 /* =========================================================================
    SMALL UI ATOMS
@@ -60,6 +62,123 @@ export function IconButton({ onClick, title, children, danger }) {
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Hover-to-preview (not click): after a short delay while the mouse rests
+ * over a task row/card, calls back with the trigger's on-screen position so
+ * a single quick-info card can be rendered once, above any scrolling table
+ * container (no ancestor "overflow" clipping to worry about).
+ */
+export function computeHoverPos(rect) {
+  const width = 288;
+  let left = rect.left;
+  if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
+  if (left < 12) left = 12;
+  let top = rect.bottom + 6;
+  if (top + 260 > window.innerHeight) top = Math.max(12, rect.top - 6 - 260);
+  return { top, left };
+}
+
+export function useHoverIntent(onShow, onHide, delay = 350) {
+  const showTimer = useRef(null);
+  const hideTimer = useRef(null);
+
+  const onMouseEnter = useCallback(
+    (e) => {
+      clearTimeout(hideTimer.current);
+      const rect = e.currentTarget.getBoundingClientRect();
+      showTimer.current = setTimeout(() => onShow(computeHoverPos(rect)), delay);
+    },
+    [onShow, delay]
+  );
+
+  const onMouseLeave = useCallback(() => {
+    clearTimeout(showTimer.current);
+    hideTimer.current = setTimeout(() => onHide(), 100);
+  }, [onHide]);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(showTimer.current);
+      clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  return { onMouseEnter, onMouseLeave };
+}
+
+export function TaskQuickInfoCard({ task, assignerDeptMap, pos }) {
+  const pct = taskCompletionPct(task);
+  const doneSubtasks = task.subtasks?.filter((s) => s.done).length || 0;
+  const lastTouched = formatRelativeTime(task.updatedAt || task.createdAt);
+  return (
+    <div
+      style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
+      className="w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+    >
+      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{task.title}</p>
+      <p className="truncate text-xs text-slate-400">
+        {task.category} · {task.subcategory}
+      </p>
+
+      <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+        <p className="flex items-center gap-1.5">
+          <UserCog size={11} className="shrink-0 text-slate-400" />
+          {task.assigner || "Unassigned"}
+          {assignerDeptMap[task.assigner] && <span className="text-slate-400">({assignerDeptMap[task.assigner]})</span>}
+        </p>
+        <p className="flex items-center gap-1.5">
+          <CheckCircle2 size={11} className="shrink-0 text-slate-400" />
+          {pct}% complete{task.subtasks?.length > 0 && ` (${doneSubtasks}/${task.subtasks.length} subtasks)`}
+        </p>
+        {task.estimate ? (
+          <p className="flex items-center gap-1.5">
+            <Target size={11} className="shrink-0 text-slate-400" />
+            Estimated {formatHours(task.estimate)}
+          </p>
+        ) : null}
+        {lastTouched && (
+          <p className="flex items-center gap-1.5">
+            <Clock size={11} className="shrink-0 text-slate-400" />
+            Last touched {lastTouched}
+          </p>
+        )}
+      </div>
+
+      {task.description && (
+        <p className="mt-2 line-clamp-2 border-t border-slate-100 pt-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          {task.description}
+        </p>
+      )}
+
+      {task.rounds?.length > 0 && (
+        <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+          <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <Repeat size={11} /> Rounds ({task.rounds.length})
+          </p>
+          <div className="space-y-1">
+            {task.rounds.slice(0, 3).map((r) => (
+              <div key={r.id} className="flex items-start gap-1.5 text-[11px]">
+                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: r.color || stringToColor(r.label || "Round") }} />
+                <span className="truncate text-slate-600 dark:text-slate-300">
+                  <span className="font-medium">{r.label}</span>
+                  {r.note ? ` — ${r.note}` : ""}
+                </span>
+              </div>
+            ))}
+            {task.rounds.length > 3 && <p className="pl-3 text-[10px] text-slate-400">+{task.rounds.length - 3} more</p>}
+          </div>
+        </div>
+      )}
+
+      {!task.description && !(task.rounds?.length > 0) && (
+        <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-400 dark:border-slate-800">
+          Click the task to see full details, subtasks and time log.
+        </p>
+      )}
+    </div>
   );
 }
 

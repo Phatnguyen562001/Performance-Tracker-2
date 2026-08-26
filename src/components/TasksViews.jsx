@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   ListChecks,
   AlertTriangle,
@@ -36,25 +36,31 @@ import {
   softStyle,
   solidStyle,
 } from "../lib/timeUtils";
-import { Badge, ProgressBar, EmptyState, IconButton } from "./ui";
+import { Badge, ProgressBar, EmptyState, IconButton, useHoverIntent, TaskQuickInfoCard } from "./ui";
 import { FilterBar } from "./FilterBar";
 
 /* =========================================================================
    TASK CARD (used in Kanban)
    ========================================================================= */
 
-export function TaskCard({ task, holidaySet, workSchedule, catColor, onClick, draggable, onDragStart, onToggleTimer, onStatusChange }) {
+export function TaskCard({ task, holidaySet, workSchedule, catColor, assignerDeptMap, onClick, draggable, onDragStart, onToggleTimer, onStatusChange, onHoverTask, onUnhoverTask }) {
   const pct = taskCompletionPct(task);
   const overdue = isTaskOverdue(task);
   const completedLate = isTaskCompletedLate(task);
   const hours = taskTotalHours(task, holidaySet, workSchedule);
   const isRunning = !!task.runningStart;
   const isDone = task.status === "Completed";
+  const hover = useHoverIntent(
+    (pos) => onHoverTask(task, pos),
+    onUnhoverTask
+  );
   return (
     <div
       draggable={draggable}
       onDragStart={onDragStart}
       onClick={onClick}
+      onMouseEnter={hover.onMouseEnter}
+      onMouseLeave={hover.onMouseLeave}
       className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/50"
     >
       <div className="mb-1.5 flex items-center gap-1.5">
@@ -142,7 +148,7 @@ export function TaskCard({ task, holidaySet, workSchedule, catColor, onClick, dr
    TASKS VIEW: TABLE / KANBAN / CALENDAR
    ========================================================================= */
 
-export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, assignerDeptMap, onOpen, onToggleTimer, onStatusChange }) {
+export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, assignerDeptMap, onOpen, onToggleTimer, onStatusChange, onHoverTask, onUnhoverTask }) {
   if (tasks.length === 0) {
     return <EmptyState icon={ListChecks} title="No tasks found" description="Try adjusting your filters or create a new task to get started." />;
   }
@@ -159,128 +165,150 @@ export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, ass
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900/40">
-          {tasks.map((t) => {
-            const pct = taskCompletionPct(t);
-            const overdue = isTaskOverdue(t);
-            const completedLate = isTaskCompletedLate(t);
-            const hours = taskTotalHours(t, holidaySet, workSchedule);
-            const color = categoryColors[t.category] || "#64748b";
-            const isRunning = !!t.runningStart;
-            const isDone = t.status === "Completed";
-            return (
-              <tr
-                key={t.id}
-                onClick={() => onOpen(t)}
-                className={classNames("cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/40", isRunning && "bg-rose-50/60 dark:bg-rose-500/5")}
-              >
-                <td className="max-w-[220px] px-4 py-3">
-                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{t.title}</p>
-                  <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
-                    {t.subcategory}
-                    {t.rounds?.length > 0 && (
-                      <span className="flex items-center gap-0.5 text-slate-400" title={`${t.rounds.length} round(s) logged`}>
-                        <Repeat size={10} /> {t.rounds.length}
-                      </span>
-                    )}
-                  </p>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className="border-0" style={softStyle(color)}>
-                    {t.category}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className={PRIORITY_STYLES[t.priority]}>{t.priority}</Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className={STATUS_STYLES[t.status]}>{t.status}</Badge>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                  {t.assigner || <span className="text-slate-300 dark:text-slate-600">—</span>}
-                  {assignerDeptMap[t.assigner] && <span className="ml-1.5 text-xs text-slate-400">({assignerDeptMap[t.assigner]})</span>}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm">
-                  <span
-                    className={classNames(
-                      "flex items-center gap-1",
-                      overdue
-                        ? "font-medium text-rose-600 dark:text-rose-400"
-                        : completedLate
-                        ? "font-medium text-amber-600 dark:text-amber-400"
-                        : "text-slate-600 dark:text-slate-300"
-                    )}
-                  >
-                    {overdue && <AlertTriangle size={12} />}
-                    {completedLate && <Clock size={12} />}
-                    {formatDateDisplay(t.deadline)}
-                  </span>
-                  {completedLate && <p className="text-[10px] text-amber-500">Completed {daysLate(t)}d late</p>}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-20">
-                      <ProgressBar pct={pct} color={color} />
-                    </div>
-                    <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{pct}%</span>
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-slate-600 dark:text-slate-300">
-                  <span className="flex items-center gap-1">
-                    {formatHours(hours)}
-                    {!taskUsesBusinessHours(t) && <Clock size={11} className="text-amber-500" />}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStatusChange(t.id, isDone ? "In Progress" : "Completed");
-                      }}
-                      title={isDone ? "Completed — click to un-complete" : "Mark as Completed"}
-                      className={classNames(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-md border transition",
-                        isDone
-                          ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500/50"
-                          : "border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:hover:border-emerald-500/50"
-                      )}
-                    >
-                      <CheckCircle2 size={15} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleTimer(t.id);
-                      }}
-                      className={classNames(
-                        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
-                        isRunning
-                          ? "bg-rose-600 text-white hover:bg-rose-500"
-                          : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
-                      )}
-                    >
-                      {isRunning ? (
-                        <>
-                          <Square size={11} className="fill-current" /> End ({formatClockTime(t.runningStart)})
-                        </>
-                      ) : (
-                        <>
-                          <Play size={11} className="fill-current" /> Start
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {tasks.map((t) => (
+            <TaskTableRow
+              key={t.id}
+              task={t}
+              holidaySet={holidaySet}
+              workSchedule={workSchedule}
+              categoryColors={categoryColors}
+              assignerDeptMap={assignerDeptMap}
+              onOpen={onOpen}
+              onToggleTimer={onToggleTimer}
+              onStatusChange={onStatusChange}
+              onHoverTask={onHoverTask}
+              onUnhoverTask={onUnhoverTask}
+            />
+          ))}
         </tbody>
       </table>
     </div>
   );
 }
 
-export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, onOpen, onStatusChange, onToggleTimer }) {
+export function TaskTableRow({ task: t, holidaySet, workSchedule, categoryColors, assignerDeptMap, onOpen, onToggleTimer, onStatusChange, onHoverTask, onUnhoverTask }) {
+  const pct = taskCompletionPct(t);
+  const overdue = isTaskOverdue(t);
+  const completedLate = isTaskCompletedLate(t);
+  const hours = taskTotalHours(t, holidaySet, workSchedule);
+  const color = categoryColors[t.category] || "#64748b";
+  const isRunning = !!t.runningStart;
+  const isDone = t.status === "Completed";
+  const hover = useHoverIntent(
+    (pos) => onHoverTask(t, pos),
+    onUnhoverTask
+  );
+
+  return (
+    <tr
+      onClick={() => onOpen(t)}
+      onMouseEnter={hover.onMouseEnter}
+      onMouseLeave={hover.onMouseLeave}
+      className={classNames("cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/40", isRunning && "bg-rose-50/60 dark:bg-rose-500/5")}
+    >
+      <td className="max-w-[220px] px-4 py-3">
+        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{t.title}</p>
+        <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+          {t.subcategory}
+          {t.rounds?.length > 0 && (
+            <span className="flex items-center gap-0.5 text-slate-400" title={`${t.rounds.length} round(s) logged`}>
+              <Repeat size={10} /> {t.rounds.length}
+            </span>
+          )}
+        </p>
+      </td>
+      <td className="px-4 py-3">
+        <Badge className="border-0" style={softStyle(color)}>
+          {t.category}
+        </Badge>
+      </td>
+      <td className="px-4 py-3">
+        <Badge className={PRIORITY_STYLES[t.priority]}>{t.priority}</Badge>
+      </td>
+      <td className="px-4 py-3">
+        <Badge className={STATUS_STYLES[t.status]}>{t.status}</Badge>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+        {t.assigner || <span className="text-slate-300 dark:text-slate-600">—</span>}
+        {assignerDeptMap[t.assigner] && <span className="ml-1.5 text-xs text-slate-400">({assignerDeptMap[t.assigner]})</span>}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-sm">
+        <span
+          className={classNames(
+            "flex items-center gap-1",
+            overdue
+              ? "font-medium text-rose-600 dark:text-rose-400"
+              : completedLate
+              ? "font-medium text-amber-600 dark:text-amber-400"
+              : "text-slate-600 dark:text-slate-300"
+          )}
+        >
+          {overdue && <AlertTriangle size={12} />}
+          {completedLate && <Clock size={12} />}
+          {formatDateDisplay(t.deadline)}
+        </span>
+        {completedLate && <p className="text-[10px] text-amber-500">Completed {daysLate(t)}d late</p>}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="w-20">
+            <ProgressBar pct={pct} color={color} />
+          </div>
+          <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{pct}%</span>
+        </div>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-slate-600 dark:text-slate-300">
+        <span className="flex items-center gap-1">
+          {formatHours(hours)}
+          {!taskUsesBusinessHours(t) && <Clock size={11} className="text-amber-500" />}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStatusChange(t.id, isDone ? "In Progress" : "Completed");
+            }}
+            title={isDone ? "Completed — click to un-complete" : "Mark as Completed"}
+            className={classNames(
+              "inline-flex h-8 w-8 items-center justify-center rounded-md border transition",
+              isDone
+                ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500/50"
+                : "border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:hover:border-emerald-500/50"
+            )}
+          >
+            <CheckCircle2 size={15} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleTimer(t.id);
+            }}
+            className={classNames(
+              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+              isRunning
+                ? "bg-rose-600 text-white hover:bg-rose-500"
+                : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
+            )}
+          >
+            {isRunning ? (
+              <>
+                <Square size={11} className="fill-current" /> End ({formatClockTime(t.runningStart)})
+              </>
+            ) : (
+              <>
+                <Play size={11} className="fill-current" /> Start
+              </>
+            )}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, assignerDeptMap, onOpen, onStatusChange, onToggleTimer, onHoverTask, onUnhoverTask }) {
   const [draggingId, setDraggingId] = useState(null);
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -312,6 +340,7 @@ export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, o
                     holidaySet={holidaySet}
                     workSchedule={workSchedule}
                     catColor={categoryColors[t.category] || "#64748b"}
+                    assignerDeptMap={assignerDeptMap}
                     onClick={() => onOpen(t)}
                     draggable
                     onDragStart={(e) => {
@@ -320,6 +349,8 @@ export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, o
                     }}
                     onToggleTimer={onToggleTimer}
                     onStatusChange={onStatusChange}
+                    onHoverTask={onHoverTask}
+                    onUnhoverTask={onUnhoverTask}
                   />
                 </div>
               ))}
@@ -471,6 +502,10 @@ export function TasksView({
   const [monthCursor, setMonthCursor] = useState(null); // null = all months
   const [quickTitle, setQuickTitle] = useState("");
   const [sortBy, setSortBy] = useState("");
+  const [hoverInfo, setHoverInfo] = useState(null); // { task, pos } | null
+
+  const handleHoverTask = useCallback((task, pos) => setHoverInfo({ task, pos }), []);
+  const handleUnhoverTask = useCallback(() => setHoverInfo(null), []);
 
   function submitQuickAdd(e) {
     e.preventDefault();
@@ -618,6 +653,8 @@ export function TasksView({
           onOpen={onOpen}
           onToggleTimer={onToggleTimer}
           onStatusChange={onStatusChange}
+          onHoverTask={handleHoverTask}
+          onUnhoverTask={handleUnhoverTask}
         />
       )}
       {viewMode === "kanban" && (
@@ -626,12 +663,16 @@ export function TasksView({
           holidaySet={holidaySet}
           workSchedule={workSchedule}
           categoryColors={categoryColors}
+          assignerDeptMap={assignerDeptMap}
           onOpen={onOpen}
           onStatusChange={onStatusChange}
           onToggleTimer={onToggleTimer}
+          onHoverTask={handleHoverTask}
+          onUnhoverTask={handleUnhoverTask}
         />
       )}
       {viewMode === "calendar" && <CalendarView tasks={filtered} categoryColors={categoryColors} onOpen={onOpen} />}
+      {hoverInfo && <TaskQuickInfoCard task={hoverInfo.task} assignerDeptMap={assignerDeptMap} pos={hoverInfo.pos} />}
     </div>
   );
 }

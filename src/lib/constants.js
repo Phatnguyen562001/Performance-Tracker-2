@@ -89,5 +89,8 @@ export const STORAGE_KEYS = {
   departments: "lpt_departments_v1",
   assigners: "lpt_assigners_v1",
   workSchedule: "lpt_work_schedule_v1",
+  everydayTasks: "lpt_everyday_tasks_v1",
+  everydayCompletions: "lpt_everyday_completions_v1",
+  events: "lpt_events_v1",
 };
 
