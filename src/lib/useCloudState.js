@@ -110,6 +110,28 @@ export function useCloudDoc(uid) {
         return;
       }
 
+      // Safety net: if this save would remove or replace most tasks (mass
+      // delete, Reset, Import, a bug...), first keep a full copy of what is
+      // there right now so it can always be restored from Settings.
+      try {
+        const before = Array.isArray(base.tasks) ? base.tasks : [];
+        const after = Array.isArray(next.tasks) ? next.tasks : [];
+        if (before.length >= 3 && next.tasks !== base.tasks) {
+          const afterIds = new Set(after.map((t) => t.id));
+          const kept = before.filter((t) => afterIds.has(t.id)).length;
+          if (kept < before.length * 0.5) {
+            const label = "guard-" + new Date().toISOString().replace(/[:.]/g, "-");
+            setDoc(doc(db, "users", uid, "backups", label), {
+              savedAt: Date.now(),
+              taskCount: before.length,
+              data: JSON.stringify(base),
+            }).catch((e) => console.error("Guard backup failed:", e));
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
       // Existing user: send ONLY the fields that changed.
       const patch = {};
       Object.keys(next).forEach((k) => {
@@ -134,7 +156,7 @@ export async function listBackups(uid) {
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.id < b.id ? 1 : -1))
-    .slice(0, 30);
+    .slice(0, 40);
 }
 
 export function readLocalMirror(uid) {

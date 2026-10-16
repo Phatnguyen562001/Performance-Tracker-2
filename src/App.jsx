@@ -111,12 +111,12 @@ function MainApp() {
   useEffect(() => {
     if (!user || !shareToken || !tasks) return undefined;
     const timer = setTimeout(() => {
-      publishShare(shareToken, { uid: user.uid, ownerName: user.displayName, tasks, includeNotes: shareIncludeNotes }).catch((e) =>
+      publishShare(shareToken, { uid: user.uid, ownerName: user.displayName, tasks, holidaySet: new Set(holidays), workSchedule }).catch((e) =>
         console.error("Share sync error:", e)
       );
     }, 1500);
     return () => clearTimeout(timer);
-  }, [user, shareToken, tasks, shareIncludeNotes]);
+  }, [user, shareToken, tasks, holidays, workSchedule]);
 
   function enableShare(regenerate) {
     const old = shareToken;

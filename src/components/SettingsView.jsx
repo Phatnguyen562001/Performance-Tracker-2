@@ -664,7 +664,7 @@ function SharingCard({ shareToken, includeNotes, onEnable, onDisable, onNotes })
       <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Share a read-only view</p>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         Anyone with the link can VIEW your task list (no sign-in, no editing). It updates automatically when you change tasks.
-        Shared: title, category, priority, status, assigner, dates and progress. Never shared: rounds, subtasks, time logs, estimates.
+        Viewers see EVERYTHING in each task: details, description, rounds, subtasks and time log. Only share it with people you trust.
       </p>
       {!shareToken ? (
         <button onClick={onEnable} className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
@@ -678,10 +678,6 @@ function SharingCard({ shareToken, includeNotes, onEnable, onDisable, onNotes })
               {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-            <input type="checkbox" checked={!!includeNotes} onChange={(e) => onNotes(e.target.checked)} />
-            Also show each task's description (may contain confidential details)
-          </label>
           <div className="flex gap-2">
             <button
               onClick={() => window.confirm("Stop sharing? The current link will stop working.") && onDisable()}
@@ -734,7 +730,7 @@ function AutoBackups({ userId }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
       <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Automatic backups</p>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">One snapshot per day, kept in your account.</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">One snapshot per day, plus an extra copy automatically saved right before any big deletion, reset or import.</p>
       {items === null && <p className="mt-3 text-xs text-slate-500">Loading...</p>}
       {items && items.length === 0 && (
         <p className="mt-3 text-xs text-slate-500">No backups yet — the first is created the next time you open the app with data in it.</p>
@@ -742,7 +738,7 @@ function AutoBackups({ userId }) {
       <div className="mt-3 space-y-1.5">
         {(items || []).map((b) => (
           <div key={b.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-            <span className="text-slate-700 dark:text-slate-200">{b.id} · {b.taskCount} tasks</span>
+            <span className="text-slate-700 dark:text-slate-200">{b.id.startsWith("guard-") ? "Before a big change · " + new Date(b.savedAt).toLocaleString("en-GB") : b.id} · {b.taskCount} tasks</span>
             <button onClick={() => restore(b)} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Restore</button>
           </div>
         ))}

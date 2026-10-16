@@ -1,6 +1,6 @@
 import { doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
-import { taskCompletionPct, getReceivedDate } from "./timeUtils";
+import { taskCompletionPct, getReceivedDate, sessionMinutes, taskUsesBusinessHours } from "./timeUtils";
 
 /** Unguessable link id (~143 bits of randomness). */
 export function makeShareToken() {
@@ -14,11 +14,21 @@ export function shareUrl(token) {
   return `${window.location.origin}/?share=${token}`;
 }
 
-/** Only these fields ever leave the owner's private area. */
-function sanitizeTask(t, includeNotes) {
-  const out = {
+/** Everything a viewer needs to see the whole task (read-only). Hours are
+ *  pre-computed here because the viewer has no access to your holidays/work hours. */
+function sanitizeTask(t, ctx) {
+  const businessOnly = taskUsesBusinessHours(t);
+  const sessions = (t.sessions || []).map((s) => ({
+    id: s.id,
+    start: s.start || "",
+    end: s.end || "",
+    overtime: !!s.overtime,
+    hours: +(sessionMinutes(s, businessOnly, ctx.holidaySet, ctx.workSchedule) / 60).toFixed(2),
+  }));
+  return {
     id: t.id,
     title: t.title || "",
+    description: t.description || "",
     category: t.category || "",
     subcategory: t.subcategory || "",
     priority: t.priority || "",
@@ -27,19 +37,33 @@ function sanitizeTask(t, includeNotes) {
     receivedDate: getReceivedDate(t) || "",
     deadline: t.deadline || "",
     completedAt: t.completedAt || null,
+    createdAt: t.createdAt || null,
+    updatedAt: t.updatedAt || null,
+    businessHoursOnly: businessOnly,
+    estimate: t.estimate || null,
+    totalHours: +sessions.reduce((a, s) => a + s.hours, 0).toFixed(2),
     pct: taskCompletionPct(t),
+    subtasks: (t.subtasks || []).map((s) => ({ id: s.id, title: s.title || "", done: !!s.done })),
+    rounds: (t.rounds || []).map((r) => ({
+      id: r.id,
+      date: r.date || "",
+      label: r.label || "",
+      recipient: r.recipient || "",
+      note: r.note || "",
+      color: r.color || "",
+    })),
+    sessions,
   };
-  if (includeNotes) out.description = t.description || "";
-  return out;
 }
 
-export function publishShare(token, { uid, ownerName, tasks, includeNotes }) {
+export function publishShare(token, { uid, ownerName, tasks, holidaySet, workSchedule }) {
+  const ctx = { holidaySet: holidaySet || new Set(), workSchedule };
   return setDoc(doc(db, "shares", token), {
     ownerUid: uid,
     ownerName: ownerName || "",
     updatedAt: Date.now(),
-    includeNotes: !!includeNotes,
-    tasks: tasks.map((t) => sanitizeTask(t, includeNotes)),
+    fullDetail: true,
+    tasks: tasks.map((t) => sanitizeTask(t, ctx)),
   });
 }
 
