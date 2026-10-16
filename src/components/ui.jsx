@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { CheckCircle2, Clock, Repeat, Target, UserCog } from "lucide-react";
-import { classNames, taskCompletionPct, formatHours, formatRelativeTime } from "../lib/timeUtils";
+import { CalendarDays, CheckCircle2, Clock, Repeat, Target, UserCog } from "lucide-react";
+import { classNames, taskCompletionPct, formatHours, formatRelativeTime, formatDateDisplay, getReceivedDate } from "../lib/timeUtils";
 import { stringToColor } from "../lib/constants";
 
 /* =========================================================================
@@ -133,6 +133,13 @@ export function TaskQuickInfoCard({ task, assignerDeptMap, pos }) {
           <CheckCircle2 size={11} className="shrink-0 text-slate-400" />
           {pct}% complete{task.subtasks?.length > 0 && ` (${doneSubtasks}/${task.subtasks.length} subtasks)`}
         </p>
+        {getReceivedDate(task) && (
+          <p className="flex items-center gap-1.5">
+            <CalendarDays size={11} className="shrink-0 text-slate-400" />
+            Received {formatDateDisplay(getReceivedDate(task))}
+            {task.deadline && <span className="text-slate-400">· due {formatDateDisplay(task.deadline)}</span>}
+          </p>
+        )}
         {task.estimate ? (
           <p className="flex items-center gap-1.5">
             <Target size={11} className="shrink-0 text-slate-400" />
@@ -196,3 +203,65 @@ export function Field({ label, children, required }) {
 export const inputClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:ring-indigo-500/20";
 
+
+
+/** Two-step "are you sure" for destructive actions. Step 1 = warning,
+ *  step 2 = the person must type a word before the button unlocks. */
+export function DoubleConfirmDialog({ open, title, warning, detail, word = "RESET", confirmLabel = "Erase everything", onCancel, onConfirm }) {
+  const [step, setStep] = useState(1);
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    if (open) {
+      setStep(1);
+      setTyped("");
+    }
+  }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+        <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Step {step} of 2</p>
+        <h3 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+        {step === 1 ? (
+          <>
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{warning}</p>
+            {detail && <p className="mt-2 rounded-lg bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{detail}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={onCancel} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button onClick={() => setStep(2)} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">
+                I understand, continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+              To confirm, type <span className="font-mono font-bold text-rose-600">{word}</span> below.
+            </p>
+            <input
+              autoFocus
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={word}
+              className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={onCancel} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button
+                disabled={typed.trim().toUpperCase() !== word}
+                onClick={onConfirm}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {confirmLabel}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,8 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { listBackups, restoreFromObject, readLocalMirror } from "../lib/useCloudState";
 import { GripVertical, Pencil, Plus, RotateCcw, Tag, Trash2, ListPlus, Download, Upload, Building2, UserCog } from "lucide-react";
 import { PALETTE, MAX_SUBTASKS } from "../lib/constants";
 import { uid, classNames, formatDateDisplay } from "../lib/timeUtils";
-import { IconButton, inputClass } from "./ui";
+import { IconButton, inputClass, DoubleConfirmDialog } from "./ui";
+import { shareUrl } from "../lib/share";
 
 /* =========================================================================
    CATEGORY MANAGER (Settings)
@@ -475,8 +477,15 @@ export function SettingsView({
   onResetDemo,
   onExportData,
   onImportData,
+  userId,
+  shareToken,
+  shareIncludeNotes,
+  onEnableShare,
+  onDisableShare,
+  onShareNotes,
 }) {
   const [newHoliday, setNewHoliday] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
   const importInputRef = useRef(null);
 
   function addHoliday() {
@@ -575,8 +584,8 @@ export function SettingsView({
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Data</p>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          All data is stored locally in this browser only. Back it up regularly — clearing browser data or switching
-          devices/browsers will lose everything that isn't exported.
+          Your data is saved to your Google account in the cloud. A backup is also saved automatically once a day
+          (see below). You can still export a .json file yourself for extra safety.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -603,14 +612,148 @@ export function SettingsView({
             }}
           />
           <button
-            onClick={onResetDemo}
+            onClick={() => setResetOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
             <RotateCcw size={14} /> Reset to demo data
           </button>
         </div>
       </div>
+
+      <SharingCard
+        shareToken={shareToken}
+        includeNotes={shareIncludeNotes}
+        onEnable={onEnableShare}
+        onDisable={onDisableShare}
+        onNotes={onShareNotes}
+      />
+
+      <AutoBackups userId={userId} />
+
+      <DoubleConfirmDialog
+        open={resetOpen}
+        title="Reset to demo data?"
+        warning="This will DELETE all of your tasks, categories, assigners, Everyday items and Calendar plans, and replace them with sample demo data."
+        detail="A backup file is downloaded to your computer automatically before anything is erased."
+        word="RESET"
+        confirmLabel="Yes, erase everything"
+        onCancel={() => setResetOpen(false)}
+        onConfirm={() => {
+          setResetOpen(false);
+          onResetDemo();
+        }}
+      />
     </div>
   );
 }
 
+function SharingCard({ shareToken, includeNotes, onEnable, onDisable, onNotes }) {
+  const [copied, setCopied] = useState(false);
+  const url = shareToken ? shareUrl(shareToken) : "";
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      window.prompt("Copy this link:", url);
+    }
+  }
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Share a read-only view</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Anyone with the link can VIEW your task list (no sign-in, no editing). It updates automatically when you change tasks.
+        Shared: title, category, priority, status, assigner, dates and progress. Never shared: rounds, subtasks, time logs, estimates.
+      </p>
+      {!shareToken ? (
+        <button onClick={onEnable} className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+          Create share link
+        </button>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="flex gap-2">
+            <input readOnly value={url} onFocus={(e) => e.target.select()} className={inputClass + " font-mono text-xs"} />
+            <button onClick={copy} className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input type="checkbox" checked={!!includeNotes} onChange={(e) => onNotes(e.target.checked)} />
+            Also show each task's description (may contain confidential details)
+          </label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => window.confirm("Stop sharing? The current link will stop working.") && onDisable()}
+              className="rounded-lg border border-rose-200 px-3.5 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
+            >
+              Stop sharing
+            </button>
+            <button
+              onClick={() => window.confirm("Create a new link? The old link will stop working.") && onEnable(true)}
+              className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              New link
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+function AutoBackups({ userId }) {
+  const [items, setItems] = useState(null);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    if (!userId) return;
+    listBackups(userId).then(setItems).catch(() => setItems([]));
+  }, [userId]);
+
+  async function restore(b) {
+    if (!window.confirm(`Restore the backup from ${b.id} (${b.taskCount} tasks)? Current data will be replaced.`)) return;
+    try {
+      await restoreFromObject(userId, JSON.parse(b.data));
+      setMsg("Restored. Reloading...");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      setMsg("Restore failed: " + e.message);
+    }
+  }
+  async function restoreLocal() {
+    const m = readLocalMirror(userId);
+    if (!m) return;
+    if (!window.confirm(`Restore the copy saved in this browser (${(m.tasks || []).length} tasks)?`)) return;
+    await restoreFromObject(userId, m);
+    window.location.reload();
+  }
+  const local = userId ? readLocalMirror(userId) : null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Automatic backups</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">One snapshot per day, kept in your account.</p>
+      {items === null && <p className="mt-3 text-xs text-slate-500">Loading...</p>}
+      {items && items.length === 0 && (
+        <p className="mt-3 text-xs text-slate-500">No backups yet — the first is created the next time you open the app with data in it.</p>
+      )}
+      <div className="mt-3 space-y-1.5">
+        {(items || []).map((b) => (
+          <div key={b.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <span className="text-slate-700 dark:text-slate-200">{b.id} · {b.taskCount} tasks</span>
+            <button onClick={() => restore(b)} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Restore</button>
+          </div>
+        ))}
+        {local && (
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <span className="text-slate-700 dark:text-slate-200">Copy in this browser · {(local.tasks || []).length} tasks</span>
+            <button onClick={restoreLocal} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Restore</button>
+          </div>
+        )}
+      </div>
+      {msg && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{msg}</p>}
+    </div>
+  );
+}

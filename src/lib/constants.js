@@ -32,6 +32,8 @@ export const SORT_OPTIONS = [
   { value: "", label: "Default order" },
   { value: "deadline_asc", label: "Deadline — soonest first" },
   { value: "deadline_desc", label: "Deadline — latest first" },
+  { value: "received_desc", label: "Received — newest first" },
+  { value: "received_asc", label: "Received — oldest first" },
   { value: "priority_desc", label: "Priority — High to Low" },
   { value: "priority_asc", label: "Priority — Low to High" },
   { value: "created_desc", label: "Newest created" },
@@ -45,6 +47,10 @@ export function sortTasks(tasks, sortBy) {
   if (!sortBy) return tasks;
   const arr = [...tasks];
   switch (sortBy) {
+    case "received_asc":
+      return arr.sort((a, b) => (a.receivedDate || (a.createdAt || "").slice(0, 10) || "9999").localeCompare(b.receivedDate || (b.createdAt || "").slice(0, 10) || "9999"));
+    case "received_desc":
+      return arr.sort((a, b) => (b.receivedDate || (b.createdAt || "").slice(0, 10) || "0000").localeCompare(a.receivedDate || (a.createdAt || "").slice(0, 10) || "0000"));
     case "deadline_asc":
       return arr.sort((a, b) => (a.deadline || "9999").localeCompare(b.deadline || "9999"));
     case "deadline_desc":

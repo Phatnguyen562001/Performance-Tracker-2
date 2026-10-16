@@ -11,6 +11,7 @@ import {
   getTemplateSubtasks,
   buildAssignerDeptMap,
   DEFAULT_WORK_SESSIONS,
+  getReceivedDate,
 } from "./lib/timeUtils";
 import { useLocalStorage } from "./lib/storage";
 import { useAuth } from "./lib/useAuth";
@@ -35,12 +36,21 @@ import { AnalyticsView } from "./components/AnalyticsView";
 import { TaskTypesView } from "./components/TaskTypesView";
 import { SettingsView } from "./components/SettingsView";
 import { PrintReport } from "./components/PrintReport";
+import { ShareView } from "./components/ShareView";
+import { makeShareToken, publishShare, removeShare } from "./lib/share";
 
 /* =========================================================================
    ROOT APP
    ========================================================================= */
 
 export default function App() {
+  // A share link (?share=TOKEN) opens a public read-only page — no login.
+  const shareParam = new URLSearchParams(window.location.search).get("share");
+  if (shareParam) return <ShareView token={shareParam} />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const { user, loading: authLoading, signIn, signOut, authError } = useAuth();
   const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.theme, "light");
 
@@ -59,6 +69,8 @@ export default function App() {
   const [everydayTasks, setEverydayTasks] = makeFieldState(cloudDoc, setCloudDoc, "everydayTasks", null);
   const [everydayCompletions, setEverydayCompletions] = makeFieldState(cloudDoc, setCloudDoc, "everydayCompletions", {});
   const [events, setEvents] = makeFieldState(cloudDoc, setCloudDoc, "events", null);
+  const [shareToken, setShareToken] = makeFieldState(cloudDoc, setCloudDoc, "shareToken", null);
+  const [shareIncludeNotes, setShareIncludeNotes] = makeFieldState(cloudDoc, setCloudDoc, "shareIncludeNotes", false);
 
   const [view, setView] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -94,6 +106,29 @@ export default function App() {
       });
     }
   }, [user, cloudDoc, setCloudDoc]);
+
+  // Keep the public read-only copy in step with the private data.
+  useEffect(() => {
+    if (!user || !shareToken || !tasks) return undefined;
+    const timer = setTimeout(() => {
+      publishShare(shareToken, { uid: user.uid, ownerName: user.displayName, tasks, includeNotes: shareIncludeNotes }).catch((e) =>
+        console.error("Share sync error:", e)
+      );
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [user, shareToken, tasks, shareIncludeNotes]);
+
+  function enableShare(regenerate) {
+    const old = shareToken;
+    const token = makeShareToken();
+    setShareToken(token);
+    if (regenerate && old) removeShare(old).catch(() => {});
+  }
+  function disableShare() {
+    const old = shareToken;
+    setShareToken(null);
+    if (old) removeShare(old).catch(() => {});
+  }
 
   const safeTasks = tasks || [];
   const safeCategories = categories || [];
@@ -237,6 +272,7 @@ export default function App() {
           title: trimmed,
           description: "",
           assigner: "",
+          receivedDate: todayYMD(),
           deadline: todayYMD(),
           priority: "Medium",
           category: firstCat?.name || "",
@@ -325,6 +361,7 @@ export default function App() {
       Status: t.status,
       Assigner: t.assigner,
       Department: assignerDeptMap[t.assigner] || "",
+      Received: getReceivedDate(t),
       Deadline: t.deadline,
       "Business hours only": t.trackBusinessHours !== false ? "Yes" : "No",
       "Completion %": taskCompletionPct(t),
@@ -477,7 +514,9 @@ export default function App() {
                 setAssigners={setAssigners}
                 tasks={safeTasks}
                 setTasks={setTasks}
+                userId={user.uid}
                 onResetDemo={() => {
+                  exportData(); // safety: download a backup file first
                   setTasks(buildSeedTasks());
                   setCategories(buildSeedCategories());
                   setDepartments(buildSeedDepartments());
@@ -489,6 +528,11 @@ export default function App() {
                 }}
                 onExportData={exportData}
                 onImportData={importData}
+                shareToken={shareToken}
+                shareIncludeNotes={shareIncludeNotes}
+                onEnableShare={enableShare}
+                onDisableShare={disableShare}
+                onShareNotes={setShareIncludeNotes}
               />
             )}
           </main>

@@ -13,6 +13,7 @@ import {
   getTemplateSubtasks,
   isTaskCompletedLate,
   daysLate,
+  getReceivedDate,
 } from "../lib/timeUtils";
 import { Field, IconButton, inputClass } from "./ui";
 
@@ -79,6 +80,7 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
       title: task?.title || "",
       description: task?.description || "",
       assigner: task?.assigner || "",
+      receivedDate: task?.receivedDate || (task ? getReceivedDate(task) : "") || todayYMD(),
       deadline: task?.deadline || todayYMD(),
       priority: task?.priority || "Medium",
       category: initCategory,
@@ -251,6 +253,32 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
+                <Field label="Received date">
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={form.receivedDate}
+                    onChange={(e) => update({ receivedDate: e.target.value })}
+                  />
+                </Field>
+                <Field label="Deadline">
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={form.deadline}
+                    onChange={(e) => update({ deadline: e.target.value })}
+                  />
+                  {form.receivedDate && form.deadline && form.deadline < form.receivedDate && (
+                    <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Deadline is before the received date.</p>
+                  )}
+                  {isEdit && isTaskCompletedLate(task) && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                      <Clock size={11} /> Completed {daysLate(task)} day(s) after this deadline.
+                    </p>
+                  )}
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
                 <Field label="Assigner">
                   <select className={inputClass} value={form.assigner} onChange={(e) => update({ assigner: e.target.value })}>
                     <option value="">Select assigner…</option>
@@ -266,19 +294,6 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                   </select>
                   {assigners.length === 0 && (
                     <p className="mt-1 text-[11px] text-slate-400">No assigners yet — add them in Settings → Assigners &amp; Departments.</p>
-                  )}
-                </Field>
-                <Field label="Deadline">
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={form.deadline}
-                    onChange={(e) => update({ deadline: e.target.value })}
-                  />
-                  {isEdit && isTaskCompletedLate(task) && (
-                    <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      <Clock size={11} /> Completed {daysLate(task)} day(s) after this deadline.
-                    </p>
                   )}
                 </Field>
               </div>

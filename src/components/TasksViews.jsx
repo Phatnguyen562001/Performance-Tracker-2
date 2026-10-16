@@ -23,6 +23,7 @@ import {
   formatYMD,
   addDays,
   formatDateDisplay,
+  getReceivedDate,
   formatClockTime,
   formatHours,
   todayYMD,
@@ -157,7 +158,7 @@ export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, ass
       <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
         <thead className="bg-slate-50 dark:bg-slate-900/60">
           <tr>
-            {["Task", "Category", "Priority", "Status", "Assigner", "Deadline", "Progress", "Hours", "Actions"].map((h) => (
+            {["Task", "Category", "Priority", "Status", "Assigner", "Received", "Deadline", "Progress", "Hours", "Actions"].map((h) => (
               <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {h}
               </th>
@@ -231,6 +232,9 @@ export function TaskTableRow({ task: t, holidaySet, workSchedule, categoryColors
       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
         {t.assigner || <span className="text-slate-300 dark:text-slate-600">—</span>}
         {assignerDeptMap[t.assigner] && <span className="ml-1.5 text-xs text-slate-400">({assignerDeptMap[t.assigner]})</span>}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+        {formatDateDisplay(getReceivedDate(t)) || <span className="text-slate-300 dark:text-slate-600">—</span>}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm">
         <span

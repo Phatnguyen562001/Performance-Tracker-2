@@ -350,3 +350,12 @@ export function getQuoteOfDay() {
   return DAILY_QUOTES[((dayOfYear % DAILY_QUOTES.length) + DAILY_QUOTES.length) % DAILY_QUOTES.length];
 }
 
+
+
+/** Date the task was received. Older tasks (before this field existed) fall
+ *  back to the day they were created in the app. */
+export function getReceivedDate(task) {
+  if (!task) return "";
+  if (task.receivedDate) return task.receivedDate;
+  return task.createdAt ? formatYMD(new Date(task.createdAt)) : "";
+}

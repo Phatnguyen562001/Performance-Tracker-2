@@ -1,5 +1,5 @@
 import React from "react";
-import { formatDateDisplay, formatHours, taskCompletionPct, taskTotalHours } from "../lib/timeUtils";
+import { getReceivedDate, formatDateDisplay, formatHours, taskCompletionPct, taskTotalHours } from "../lib/timeUtils";
 
 /* =========================================================================
    PRINT REPORT (used for PDF export)
@@ -13,7 +13,7 @@ export function PrintReport({ tasks, holidaySet, workSchedule }) {
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr>
-            {["Title", "Category", "Subcategory", "Priority", "Status", "Assigner", "Deadline", "Progress", "Hours"].map((h) => (
+            {["Title", "Category", "Subcategory", "Priority", "Status", "Assigner", "Received", "Deadline", "Progress", "Hours"].map((h) => (
               <th key={h} className="border border-slate-300 bg-slate-100 px-2 py-1 text-left">
                 {h}
               </th>
@@ -29,6 +29,7 @@ export function PrintReport({ tasks, holidaySet, workSchedule }) {
               <td className="border border-slate-300 px-2 py-1">{t.priority}</td>
               <td className="border border-slate-300 px-2 py-1">{t.status}</td>
               <td className="border border-slate-300 px-2 py-1">{t.assigner}</td>
+              <td className="border border-slate-300 px-2 py-1">{formatDateDisplay(getReceivedDate(t))}</td>
               <td className="border border-slate-300 px-2 py-1">{formatDateDisplay(t.deadline)}</td>
               <td className="border border-slate-300 px-2 py-1">{taskCompletionPct(t)}%</td>
               <td className="border border-slate-300 px-2 py-1">{formatHours(taskTotalHours(t, holidaySet, workSchedule))}</td>
