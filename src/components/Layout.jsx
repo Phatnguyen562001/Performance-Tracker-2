@@ -19,6 +19,7 @@ import {
   Sparkles,
   CalendarDays,
   LogOut,
+  MessageSquare,
 } from "lucide-react";
 import { classNames } from "../lib/timeUtils";
 
@@ -26,7 +27,7 @@ import { classNames } from "../lib/timeUtils";
    SIDEBAR
    ========================================================================= */
 
-export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSignOut }) {
+export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSignOut, unreadFeedback = 0 }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "everyday", label: "Everyday", icon: Sparkles },
@@ -34,6 +35,7 @@ export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSign
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "types", label: "Task Types", icon: Layers },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "feedback", label: "Feedback", icon: MessageSquare, badge: unreadFeedback },
     { id: "settings", label: "Settings", icon: SettingsIcon },
   ];
   return (
@@ -76,6 +78,9 @@ export function Sidebar({ view, setView, mobileOpen, setMobileOpen, user, onSign
               >
                 <Icon size={16} />
                 {it.label}
+                {it.badge > 0 && (
+                  <span className="ml-auto rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{it.badge}</span>
+                )}
               </button>
             );
           })}

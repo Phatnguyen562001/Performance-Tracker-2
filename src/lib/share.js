@@ -1,4 +1,4 @@
-import { doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, deleteDoc, onSnapshot, addDoc, collection } from "firebase/firestore";
 import { db } from "./firebase";
 import { taskCompletionPct, getReceivedDate, sessionMinutes, taskUsesBusinessHours } from "./timeUtils";
 
@@ -73,4 +73,32 @@ export function removeShare(token) {
 
 export function watchShare(token, onData, onError) {
   return onSnapshot(doc(db, "shares", token), (snap) => onData(snap.exists() ? snap.data() : null), onError);
+}
+
+/* ---- Viewer feedback (notes / recommendations left on a shared link) ---- */
+
+export const COMMENT_KINDS = ["Note", "Recommendation", "Question"];
+
+/** Anyone holding the link may ADD a comment; only the owner can read them. */
+export function addComment(token, { author, kind, text, taskId, taskTitle }) {
+  return addDoc(collection(db, "shares", token, "comments"), {
+    author: String(author || "").slice(0, 80),
+    kind,
+    text: String(text).slice(0, 2000),
+    taskId: taskId || "",
+    taskTitle: String(taskTitle || "").slice(0, 300),
+    createdAt: Date.now(),
+  });
+}
+
+export function watchComments(token, onData, onError) {
+  return onSnapshot(
+    collection(db, "shares", token, "comments"),
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => b.createdAt - a.createdAt)),
+    onError
+  );
+}
+
+export function deleteComment(token, id) {
+  return deleteDoc(doc(db, "shares", token, "comments", id));
 }

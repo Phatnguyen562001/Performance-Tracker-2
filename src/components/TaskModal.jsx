@@ -26,7 +26,8 @@ import { Field, IconButton, inputClass } from "./ui";
    ROUNDS FLOW CHART — visual chain of a task's back-and-forth cycles
    ========================================================================= */
 
-export function RoundsFlow({ rounds }) {
+export function RoundsFlow({ rounds, fullText = false }) {
+  const [openId, setOpenId] = useState(null);
   if (rounds.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
@@ -39,16 +40,29 @@ export function RoundsFlow({ rounds }) {
       <div className="flex items-stretch gap-1.5" style={{ minWidth: "max-content" }}>
         {rounds.map((r, idx) => {
           const color = r.color || stringToColor(r.label || "Round");
+          const expanded = fullText || openId === r.id;
+          const long = (r.note || "").length > 60;
           return (
             <React.Fragment key={r.id}>
-              <div className="flex w-44 shrink-0 flex-col gap-1 rounded-lg border px-3 py-2" style={{ borderColor: `${color}40`, backgroundColor: `${color}14` }}>
+              <div
+                onClick={() => long && !fullText && setOpenId(expanded ? null : r.id)}
+                className={"flex shrink-0 flex-col gap-1 rounded-lg border px-3 py-2 " + (expanded ? "w-80" : "w-44") + (long && !fullText ? " cursor-pointer" : "")}
+                style={{ borderColor: `${color}40`, backgroundColor: `${color}14` }}
+              >
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                   {r.label || "Round"}
                 </div>
-                <p className="line-clamp-2 whitespace-pre-line text-xs font-medium leading-snug text-slate-700 dark:text-slate-200" title={r.note}>
+                <p
+                  className={"whitespace-pre-wrap break-words text-xs font-medium leading-snug text-slate-700 dark:text-slate-200 " + (expanded ? "" : "line-clamp-2")}
+                >
                   {r.note || "—"}
                 </p>
+                {long && !fullText && (
+                  <p className="text-[10px] font-medium" style={{ color }}>
+                    {expanded ? "Click to collapse" : "Click to read all"}
+                  </p>
+                )}
                 {r.recipient && (
                   <p className="truncate text-[10px] text-slate-500 dark:text-slate-400" title={r.recipient}>
                     → {r.recipient}

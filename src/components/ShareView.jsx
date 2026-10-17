@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, CheckCircle2, Circle, Zap } from "lucide-react";
-import { watchShare } from "../lib/share";
+import { watchShare, addComment, COMMENT_KINDS } from "../lib/share";
 import { STATUSES, PRIORITY_STYLES, STATUS_STYLES } from "../lib/constants";
 import { formatDateDisplay, todayYMD, formatRelativeTime, formatHours, formatClockTime } from "../lib/timeUtils";
 import { Badge, ProgressBar } from "./ui";
@@ -15,7 +15,92 @@ function Section({ title, children }) {
   );
 }
 
-function TaskDetail({ t }) {
+function CommentBox({ token, task }) {
+  const [author, setAuthor] = useState(() => {
+    try {
+      return localStorage.getItem("lpt_viewer_name") || "";
+    } catch (e) {
+      return "";
+    }
+  });
+  const [kind, setKind] = useState("Note");
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const general = !task;
+
+  async function submit() {
+    if (!text.trim()) return;
+    setBusy(true);
+    setErr("");
+    try {
+      try {
+        localStorage.setItem("lpt_viewer_name", author);
+      } catch (e) {
+        /* ignore */
+      }
+      await addComment(token, { author: author.trim(), kind, text: text.trim(), taskId: task?.id, taskTitle: task?.title });
+      setSent((s) => [{ kind, text: text.trim(), at: Date.now() }, ...s]);
+      setText("");
+    } catch (e) {
+      setErr("Couldn't send. Please try again later.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+        {general ? "Leave a note about this list" : "Leave a note or recommendation on this task"}
+      </p>
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+          placeholder="Your name (optional)"
+          maxLength={80}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+        />
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+        >
+          {COMMENT_KINDS.map((k) => (
+            <option key={k}>{k}</option>
+          ))}
+        </select>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        maxLength={2000}
+        placeholder="Write your message…"
+        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+      />
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[11px] text-slate-400">Only the owner of this list can read your message.</span>
+        <button
+          onClick={submit}
+          disabled={busy || !text.trim()}
+          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+        >
+          {busy ? "Sending…" : "Send"}
+        </button>
+      </div>
+      {err && <p className="mt-1 text-xs text-rose-600">{err}</p>}
+      {sent.map((m, i) => (
+        <p key={i} className="mt-2 rounded-md bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+          <span className="font-semibold text-emerald-600">✓ Sent ({m.kind}):</span> {m.text}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function TaskDetail({ t, token }) {
   const doneSub = t.subtasks?.filter((s) => s.done).length || 0;
   return (
     <div className="space-y-4 bg-slate-50/70 px-5 py-4 dark:bg-slate-900/70">
@@ -56,7 +141,7 @@ function TaskDetail({ t }) {
 
       <Section title={`Rounds (${t.rounds?.length || 0})`}>
         {t.rounds?.length > 0 ? (
-          <RoundsFlow rounds={t.rounds} />
+          <RoundsFlow rounds={t.rounds} fullText />
         ) : (
           <p className="text-xs text-slate-400">No rounds logged.</p>
         )}
@@ -110,6 +195,8 @@ function TaskDetail({ t }) {
           <p className="text-xs text-slate-400">No time logged.</p>
         )}
       </Section>
+
+      <CommentBox token={token} task={t} />
     </div>
   );
 }
@@ -169,6 +256,15 @@ export function ShareView({ token }) {
                   <span className="rounded-lg bg-white px-3 py-1.5 font-medium text-rose-600 shadow-sm dark:bg-slate-900">{stats.overdue} overdue</span>
                 </div>
               </div>
+
+              <details className="mt-4 rounded-lg">
+                <summary className="cursor-pointer text-sm font-medium text-indigo-600 dark:text-indigo-300">
+                  Leave a note about the whole list
+                </summary>
+                <div className="mt-2">
+                  <CommentBox token={token} task={null} />
+                </div>
+              </details>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <input
@@ -246,7 +342,7 @@ export function ShareView({ token }) {
                           {isOpen && (
                             <tr>
                               <td colSpan={9} className="p-0">
-                                <TaskDetail t={t} />
+                                <TaskDetail t={t} token={token} />
                               </td>
                             </tr>
                           )}

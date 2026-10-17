@@ -37,7 +37,8 @@ import { TaskTypesView } from "./components/TaskTypesView";
 import { SettingsView } from "./components/SettingsView";
 import { PrintReport } from "./components/PrintReport";
 import { ShareView } from "./components/ShareView";
-import { makeShareToken, publishShare, removeShare } from "./lib/share";
+import { makeShareToken, publishShare, removeShare, watchComments, deleteComment } from "./lib/share";
+import { FeedbackView } from "./components/FeedbackView";
 
 /* =========================================================================
    ROOT APP
@@ -70,6 +71,8 @@ function MainApp() {
   const [everydayCompletions, setEverydayCompletions] = makeFieldState(cloudDoc, setCloudDoc, "everydayCompletions", {});
   const [events, setEvents] = makeFieldState(cloudDoc, setCloudDoc, "events", null);
   const [shareToken, setShareToken] = makeFieldState(cloudDoc, setCloudDoc, "shareToken", null);
+  const [commentsSeenAt, setCommentsSeenAt] = makeFieldState(cloudDoc, setCloudDoc, "commentsSeenAt", 0);
+  const [comments, setComments] = useState([]);
   const [shareIncludeNotes, setShareIncludeNotes] = makeFieldState(cloudDoc, setCloudDoc, "shareIncludeNotes", false);
 
   const [view, setView] = useState("dashboard");
@@ -117,6 +120,26 @@ function MainApp() {
     }, 1500);
     return () => clearTimeout(timer);
   }, [user, shareToken, tasks, holidays, workSchedule]);
+
+  // Notes left by viewers of the share link (only the owner can read them).
+  useEffect(() => {
+    if (!user || !shareToken) {
+      setComments([]);
+      return undefined;
+    }
+    return watchComments(shareToken, setComments, (e) => console.error("Feedback sync error:", e));
+  }, [user, shareToken]);
+
+  const unreadFeedback = comments.filter((c) => c.createdAt > (commentsSeenAt || 0)).length;
+
+  // Opening the Feedback tab marks everything as read.
+  useEffect(() => {
+    if (view === "feedback" && comments.length > 0 && unreadFeedback > 0) {
+      const t = setTimeout(() => setCommentsSeenAt(Date.now()), 2500);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [view, comments, unreadFeedback]);
 
   function enableShare(regenerate) {
     const old = shareToken;
@@ -407,6 +430,7 @@ function MainApp() {
     tasks: ["Tasks", "Manage, filter and track every task"],
     types: ["Task Types", "Performance measured separately per Task Type (Subcategory)"],
     analytics: ["Analytics", "Trends across time, category and workload"],
+    feedback: ["Feedback", "Notes and recommendations left by people viewing your shared link"],
     settings: ["Settings", "Office hours, holidays and category configuration"],
   };
 
@@ -417,7 +441,7 @@ function MainApp() {
   return (
     <div className={theme === "dark" ? "dark" : ""}>
       <div className="app-shell min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0b0e14] dark:text-slate-100">
-        <Sidebar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} user={user} onSignOut={signOut} />
+        <Sidebar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} user={user} onSignOut={signOut} unreadFeedback={unreadFeedback} />
         <div className="lg:pl-64">
           <TopBar
             title={titles[view][0]}
@@ -498,6 +522,16 @@ function MainApp() {
                 categoryColors={categoryColors}
                 assignerDeptMap={assignerDeptMap}
                 theme={theme}
+              />
+            )}
+            {view === "feedback" && (
+              <FeedbackView
+                comments={comments}
+                tasks={safeTasks}
+                shareToken={shareToken}
+                seenAt={commentsSeenAt}
+                onOpenTask={(t) => setModalTask(t)}
+                onDelete={(id) => deleteComment(shareToken, id).catch((e) => console.error(e))}
               />
             )}
             {view === "settings" && (

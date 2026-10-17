@@ -680,13 +680,13 @@ function SharingCard({ shareToken, includeNotes, onEnable, onDisable, onNotes })
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => window.confirm("Stop sharing? The current link will stop working.") && onDisable()}
+              onClick={() => window.confirm("Stop sharing? The current link will stop working, and notes people left on it will no longer be readable.") && onDisable()}
               className="rounded-lg border border-rose-200 px-3.5 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
             >
               Stop sharing
             </button>
             <button
-              onClick={() => window.confirm("Create a new link? The old link will stop working.") && onEnable(true)}
+              onClick={() => window.confirm("Create a new link? The old link will stop working, and notes left on it will no longer be readable.") && onEnable(true)}
               className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
             >
               New link
