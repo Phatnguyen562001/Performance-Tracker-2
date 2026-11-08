@@ -478,6 +478,8 @@ export function SettingsView({
   onExportData,
   onImportData,
   userId,
+  slaSettings,
+  onSlaChange,
   shareToken,
   shareIncludeNotes,
   onEnableShare,
@@ -620,6 +622,8 @@ export function SettingsView({
         </div>
       </div>
 
+      <SlaCard sla={slaSettings} onChange={onSlaChange} />
+
       <SharingCard
         shareToken={shareToken}
         includeNotes={shareIncludeNotes}
@@ -643,6 +647,63 @@ export function SettingsView({
           onResetDemo();
         }}
       />
+    </div>
+  );
+}
+
+function SlaCard({ sla, onChange }) {
+  const presets = [24, 48, 72, 120];
+  const hours = Number(sla.hours) || 48;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Auto deadline</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        When a new task is created, its deadline is filled in automatically: received date &amp; time + the response time below
+        (exact hours, weekends included). You can still change any deadline by hand.
+      </p>
+      <label className="mt-3 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+        <input type="checkbox" checked={!!sla.enabled} onChange={(e) => onChange({ ...sla, enabled: e.target.checked })} />
+        Turn on auto deadline
+      </label>
+      {sla.enabled && (
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-slate-600 dark:text-slate-300">Standard response time:</span>
+            <input
+              type="number"
+              min="1"
+              max="720"
+              value={sla.hours}
+              onChange={(e) => onChange({ ...sla, hours: e.target.value === "" ? "" : Math.max(1, Math.min(720, Number(e.target.value))) })}
+              className={inputClass + " w-24"}
+            />
+            <span className="text-sm text-slate-500">hours</span>
+            {presets.map((p) => (
+              <button
+                key={p}
+                onClick={() => onChange({ ...sla, hours: p })}
+                className={
+                  "rounded-md border px-2 py-1 text-xs font-medium " +
+                  (hours === p ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-slate-700")
+                }
+              >
+                {p}h
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Example: a task received 10/10/2026 at 08:00 gets the deadline{" "}
+            <span className="font-medium text-slate-700 dark:text-slate-200">
+              {(() => {
+                const d = new Date(2026, 9, 10, 8, 0);
+                d.setMinutes(d.getMinutes() + hours * 60);
+                return d.toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+              })()}
+            </span>
+            .
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -12,6 +12,8 @@ import {
   buildAssignerDeptMap,
   DEFAULT_WORK_SESSIONS,
   getReceivedDate,
+  nowHM,
+  computeAutoDeadline,
 } from "./lib/timeUtils";
 import { useLocalStorage } from "./lib/storage";
 import { useAuth } from "./lib/useAuth";
@@ -71,6 +73,7 @@ function MainApp() {
   const [everydayCompletions, setEverydayCompletions] = makeFieldState(cloudDoc, setCloudDoc, "everydayCompletions", {});
   const [events, setEvents] = makeFieldState(cloudDoc, setCloudDoc, "events", null);
   const [shareToken, setShareToken] = makeFieldState(cloudDoc, setCloudDoc, "shareToken", null);
+  const [slaSettings, setSlaSettings] = makeFieldState(cloudDoc, setCloudDoc, "slaSettings", { enabled: true, hours: 48 });
   const [commentsSeenAt, setCommentsSeenAt] = makeFieldState(cloudDoc, setCloudDoc, "commentsSeenAt", 0);
   const [comments, setComments] = useState([]);
   const [shareIncludeNotes, setShareIncludeNotes] = makeFieldState(cloudDoc, setCloudDoc, "shareIncludeNotes", false);
@@ -281,10 +284,20 @@ function MainApp() {
 
   // Minimal-friction capture: only a title is required, everything else takes
   // sensible defaults (and the subcategory's template, if one is set).
+  const patchTask = useCallback(
+    (id, patch) => {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t)));
+    },
+    [setTasks]
+  );
+
   const quickAddTask = useCallback(
-    (title) => {
+    (title, patch = {}) => {
       const trimmed = title.trim();
       if (!trimmed) return;
+      const rDate = todayYMD();
+      const rTime = nowHM();
+      const auto = slaSettings.enabled ? computeAutoDeadline(rDate, rTime, slaSettings.hours) : null;
       const firstCat = safeCategories[0];
       const firstSub = firstCat?.subcategories[0];
       const now = new Date().toISOString();
@@ -295,8 +308,11 @@ function MainApp() {
           title: trimmed,
           description: "",
           assigner: "",
-          receivedDate: todayYMD(),
-          deadline: todayYMD(),
+          receivedDate: rDate,
+          receivedTime: rTime,
+          deadline: auto ? auto.deadline : rDate,
+          deadlineTime: auto ? auto.deadlineTime : "",
+          deadlineAuto: !!auto,
           priority: "Medium",
           category: firstCat?.name || "",
           subcategory: firstSub?.name || "",
@@ -306,11 +322,13 @@ function MainApp() {
           sessions: [],
           createdAt: now,
           updatedAt: now,
-          completedAt: null,
+          completedAt: patch.status === "Completed" ? now : null,
+          ...(patch.category ? { subtasks: getTemplateSubtasks(safeCategories, patch.category, patch.subcategory) } : {}),
+          ...patch,
         },
       ]);
     },
-    [safeCategories, setTasks]
+    [safeCategories, setTasks, slaSettings]
   );
 
   function exportData() {
@@ -502,6 +520,8 @@ function MainApp() {
                 onExportPdf={exportPdf}
                 onToggleTimer={toggleTimer}
                 onQuickAdd={quickAddTask}
+                onPatchTask={patchTask}
+                onQuickAddTo={quickAddTask}
               />
             )}
             {view === "types" && (
@@ -562,6 +582,8 @@ function MainApp() {
                 }}
                 onExportData={exportData}
                 onImportData={importData}
+                slaSettings={slaSettings}
+                onSlaChange={setSlaSettings}
                 shareToken={shareToken}
                 shareIncludeNotes={shareIncludeNotes}
                 onEnableShare={enableShare}
@@ -590,6 +612,9 @@ function MainApp() {
           assigners={safeAssigners}
           holidaySet={holidaySet}
           workSchedule={workSchedule}
+          departments={safeDepartments}
+          onAddAssigner={(a) => setAssigners((prev) => [...(prev || []), a])}
+          sla={slaSettings}
           onClose={() => setModalTask(undefined)}
           onSave={saveTask}
           onDelete={deleteTask}

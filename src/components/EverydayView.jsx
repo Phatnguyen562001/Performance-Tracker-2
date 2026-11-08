@@ -56,7 +56,7 @@ export function EverydayView({ everydayTasks, everydayCompletions, setEverydayTa
       {total > 0 && (
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <ProgressBar pct={total ? (doneCount / total) * 100 : 0} color="#4f46e5" />
+            <ProgressBar pct={total ? (doneCount / total) * 100 : 0} color="#00c875" />
           </div>
           <span className="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400">
             {doneCount}/{total}

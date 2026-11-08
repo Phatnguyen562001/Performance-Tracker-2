@@ -68,7 +68,7 @@ export function classNames(...arr) {
   return arr.filter(Boolean).join(" ");
 }
 export function softStyle(hex) {
-  return { backgroundColor: `${hex}1A`, color: hex };
+  return { backgroundColor: hex, color: "#fff" };
 }
 export function solidStyle(hex) {
   return { backgroundColor: hex, color: "#fff" };
@@ -166,7 +166,35 @@ export function taskCompletionPct(task) {
     task clears this — but does NOT mean the task was never late, see below. */
 export function isTaskOverdue(task) {
   if (!task.deadline || task.status === "Completed") return false;
+  if (task.deadlineTime) return deadlineMoment(task) < new Date();
   return task.deadline < todayYMD();
+}
+
+/** Exact moment a task is due. With no time set, the whole deadline day counts. */
+export function deadlineMoment(task) {
+  const [y, m, d] = (task.deadline || "").split("-").map(Number);
+  if (!y) return null;
+  const [hh, mm] = task.deadlineTime ? task.deadlineTime.split(":").map(Number) : [23, 59];
+  return new Date(y, m - 1, d, hh, mm, 59);
+}
+
+export function nowHM() {
+  const d = new Date();
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** received + N hours (exact elapsed time) -> { deadline: "YYYY-MM-DD", deadlineTime: "HH:MM" } */
+export function computeAutoDeadline(receivedDate, receivedTime, hours) {
+  const [y, m, d] = (receivedDate || todayYMD()).split("-").map(Number);
+  const [hh, mm] = (receivedTime || "00:00").split(":").map(Number);
+  const dt = new Date(y, m - 1, d, hh, mm);
+  dt.setMinutes(dt.getMinutes() + Math.round(Number(hours) * 60));
+  return { deadline: formatYMD(dt), deadlineTime: `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}` };
+}
+
+export function formatDateTimeDisplay(ymd, hm) {
+  if (!ymd) return "—";
+  return hm ? `${formatDateDisplay(ymd)}, ${hm}` : formatDateDisplay(ymd);
 }
 
 /** Was this task finished after its own deadline? Independent of whether it
@@ -174,7 +202,16 @@ export function isTaskOverdue(task) {
     late, so lateness isn't erased just by ticking the task done. */
 export function isTaskCompletedLate(task) {
   if (task.status !== "Completed" || !task.completedAt || !task.deadline) return false;
+  if (task.deadlineTime) return new Date(task.completedAt) > deadlineMoment(task);
   return formatYMD(new Date(task.completedAt)) > task.deadline;
+}
+/** "2d" when a day or more late, otherwise "5h". */
+export function lateText(task) {
+  if (!isTaskCompletedLate(task)) return "";
+  const days = daysLate(task);
+  if (days >= 1) return `${days}d`;
+  const hrs = Math.max(1, Math.ceil((new Date(task.completedAt) - deadlineMoment(task)) / 3600000));
+  return `${hrs}h`;
 }
 export function daysLate(task) {
   if (!isTaskCompletedLate(task)) return 0;
@@ -358,4 +395,13 @@ export function getReceivedDate(task) {
   if (!task) return "";
   if (task.receivedDate) return task.receivedDate;
   return task.createdAt ? formatYMD(new Date(task.createdAt)) : "";
+}
+
+
+/** A subtask's status. Older subtasks only have `done`; if the tick box and
+ *  the status ever disagree (e.g. ticked in the task form), the tick wins. */
+export function subtaskStatus(sub) {
+  if (sub.status && (sub.status === "Completed") === !!sub.done) return sub.status;
+  if (sub.done) return "Completed";
+  return sub.status && sub.status !== "Completed" ? sub.status : "Not Started";
 }

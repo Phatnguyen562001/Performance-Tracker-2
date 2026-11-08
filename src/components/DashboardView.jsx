@@ -54,15 +54,15 @@ export function DashboardView({ tasks, holidaySet, workSchedule, categoryCount, 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon={ListChecks} label="Total Tasks" value={stats.total} />
-        <StatCard icon={CheckCircle2} label="Completed" value={stats.completed} accent="text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={TrendingUp} label="In Progress" value={stats.inProgress} accent="text-indigo-600 dark:text-indigo-400" />
-        <StatCard icon={AlertTriangle} label="Overdue" value={stats.overdue} accent="text-rose-600 dark:text-rose-400" />
-        <StatCard icon={Clock} label="Completed Late" value={stats.completedLate} accent="text-amber-600 dark:text-amber-400" />
-        <StatCard icon={ArrowUpRight} label="Completion Rate" value={`${stats.completionRate.toFixed(0)}%`} accent="text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={Clock} label="Total Hours" value={formatHours(stats.totalHours)} accent="text-amber-600 dark:text-amber-400" />
-        <StatCard icon={Clock} label="Avg Hours / Task" value={formatHours(stats.avgHoursPerTask)} accent="text-amber-600 dark:text-amber-400" />
-        <StatCard icon={FolderTree} label="Categories" value={categoryCount} />
+        <StatCard icon={ListChecks} label="Total Tasks" value={stats.total} color="#579bfc" />
+        <StatCard icon={CheckCircle2} label="Completed" value={stats.completed} color="#00c875" />
+        <StatCard icon={TrendingUp} label="In Progress" value={stats.inProgress} color="#fdab3d" />
+        <StatCard icon={AlertTriangle} label="Overdue" value={stats.overdue} color="#e2445c" />
+        <StatCard icon={Clock} label="Completed Late" value={stats.completedLate} color="#ff642e" />
+        <StatCard icon={ArrowUpRight} label="Completion Rate" value={`${stats.completionRate.toFixed(0)}%`} color="#00c875" />
+        <StatCard icon={Clock} label="Total Hours" value={formatHours(stats.totalHours)} color="#a25ddc" />
+        <StatCard icon={Clock} label="Avg Hours / Task" value={formatHours(stats.avgHoursPerTask)} color="#a25ddc" />
+        <StatCard icon={FolderTree} label="Categories" value={categoryCount} color="#0086c0" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

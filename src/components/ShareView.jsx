@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, CheckCircle2, Circle, Zap } from "lucide-react";
 import { watchShare, addComment, COMMENT_KINDS } from "../lib/share";
 import { STATUSES, PRIORITY_STYLES, STATUS_STYLES } from "../lib/constants";
-import { formatDateDisplay, todayYMD, formatRelativeTime, formatHours, formatClockTime } from "../lib/timeUtils";
+import { formatDateTimeDisplay, formatDateDisplay, todayYMD, formatRelativeTime, formatHours, formatClockTime } from "../lib/timeUtils";
 import { Badge, ProgressBar } from "./ui";
 import { RoundsFlow } from "./TaskModal";
 
@@ -115,7 +115,7 @@ function TaskDetail({ t, token }) {
           <span className="text-slate-400">Received:</span> {formatDateDisplay(t.receivedDate) || "—"}
         </p>
         <p>
-          <span className="text-slate-400">Deadline:</span> {formatDateDisplay(t.deadline) || "—"}
+          <span className="text-slate-400">Deadline:</span> {t.deadline ? formatDateTimeDisplay(t.deadline, t.deadlineTime) : "—"}
         </p>
         <p>
           <span className="text-slate-400">Time counted:</span> {t.businessHoursOnly ? "business hours only" : "all elapsed time"}
@@ -154,6 +154,11 @@ function TaskDetail({ t, token }) {
               <li key={s.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                 {s.done ? <CheckCircle2 size={15} className="text-emerald-500" /> : <Circle size={15} className="text-slate-300" />}
                 <span className={s.done ? "text-slate-400 line-through" : ""}>{s.title || "(untitled)"}</span>
+                {s.status && s.status !== "Not Started" && !(s.done && s.status === "Completed") && (
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: ({ "In Progress": "#fdab3d", Waiting: "#579bfc", Completed: "#00c875" })[s.status] || "#a1a5b3" }}>
+                    {s.status}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -326,9 +331,9 @@ export function ShareView({ token }) {
                               <Badge className={STATUS_STYLES[t.status]}>{t.status}</Badge>
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-sm">{t.assigner || "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-3 text-sm">{formatDateDisplay(t.receivedDate) || "—"}</td>
+                            <td className="whitespace-nowrap px-4 py-3 text-sm">{t.receivedDate ? formatDateTimeDisplay(t.receivedDate, t.receivedTime) : "—"}</td>
                             <td className={"whitespace-nowrap px-4 py-3 text-sm " + (overdue ? "font-medium text-rose-600" : "")}>
-                              {formatDateDisplay(t.deadline) || "—"}
+                              {t.deadline ? formatDateTimeDisplay(t.deadline, t.deadlineTime) : "—"}
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">

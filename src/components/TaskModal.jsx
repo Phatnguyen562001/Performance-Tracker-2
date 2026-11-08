@@ -12,8 +12,10 @@ import {
   formatDateDisplay,
   getTemplateSubtasks,
   isTaskCompletedLate,
-  daysLate,
+  lateText,
   getReceivedDate,
+  nowHM,
+  computeAutoDeadline,
 } from "../lib/timeUtils";
 import { Field, IconButton, inputClass } from "./ui";
 
@@ -83,7 +85,30 @@ export function RoundsFlow({ rounds, fullText = false }) {
   );
 }
 
-export function TaskModal({ task, categories, assigners, onClose, onSave, onDelete, holidaySet, workSchedule }) {
+/** Received/deadline defaults. A NEW task gets received = now and, if the
+ *  auto-deadline setting is on, deadline = received + N hours. */
+function initialDates(task, sla) {
+  if (task) {
+    return {
+      receivedDate: task.receivedDate || getReceivedDate(task) || todayYMD(),
+      receivedTime: task.receivedTime || "",
+      deadline: task.deadline || todayYMD(),
+      deadlineTime: task.deadlineTime || "",
+      deadlineAuto: !!task.deadlineAuto,
+    };
+  }
+  const receivedDate = todayYMD();
+  const receivedTime = nowHM();
+  if (sla.enabled) {
+    return { receivedDate, receivedTime, ...computeAutoDeadline(receivedDate, receivedTime, sla.hours), deadlineAuto: true };
+  }
+  return { receivedDate, receivedTime, deadline: receivedDate, deadlineTime: "", deadlineAuto: false };
+}
+
+const dateInputClass = inputClass.replace("w-full", "min-w-0 flex-1");
+const timeInputClass = inputClass.replace("w-full", "w-32 shrink-0");
+
+export function TaskModal({ task, categories, assigners, departments = [], onAddAssigner, sla = { enabled: false, hours: 48 }, onClose, onSave, onDelete, holidaySet, workSchedule }) {
   const isEdit = !!task;
   const firstCat = categories[0]?.name || "";
   const firstSub = categories[0]?.subcategories[0]?.name || "";
@@ -94,8 +119,7 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
       title: task?.title || "",
       description: task?.description || "",
       assigner: task?.assigner || "",
-      receivedDate: task?.receivedDate || (task ? getReceivedDate(task) : "") || todayYMD(),
-      deadline: task?.deadline || todayYMD(),
+      ...initialDates(task, sla),
       priority: task?.priority || "Medium",
       category: initCategory,
       subcategory: initSubcategory,
@@ -121,6 +145,42 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
 
   function update(patch) {
     setForm((f) => ({ ...f, ...patch }));
+  }
+
+  // Changing the received date/time re-computes the deadline while it is still on "auto".
+  function changeReceived(patch) {
+    setForm((f) => {
+      const next = { ...f, ...patch };
+      if (sla.enabled && f.deadlineAuto) Object.assign(next, computeAutoDeadline(next.receivedDate, next.receivedTime, sla.hours));
+      return next;
+    });
+  }
+  function resetToAuto() {
+    setForm((f) => ({ ...f, ...computeAutoDeadline(f.receivedDate, f.receivedTime, sla.hours), deadlineAuto: true }));
+  }
+
+  // Quick-add assigner (inline, without leaving the task form)
+  const [newAssignerOpen, setNewAssignerOpen] = useState(false);
+  const [newAssignerName, setNewAssignerName] = useState("");
+  const [newAssignerDept, setNewAssignerDept] = useState("");
+  const [newAssignerErr, setNewAssignerErr] = useState("");
+  function submitNewAssigner() {
+    const name = newAssignerName.trim();
+    if (!name) {
+      setNewAssignerErr("Enter a name.");
+      return;
+    }
+    const existing = assigners.find((a) => a.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      update({ assigner: existing.name });
+    } else {
+      onAddAssigner && onAddAssigner({ id: uid(), name, department: newAssignerDept });
+      update({ assigner: name });
+    }
+    setNewAssignerName("");
+    setNewAssignerDept("");
+    setNewAssignerErr("");
+    setNewAssignerOpen(false);
   }
 
   // For brand-new tasks, pre-fill the checklist from the type's template — but
@@ -266,28 +326,52 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                   placeholder="Add relevant context or scope..."
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Received date">
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={form.receivedDate}
-                    onChange={(e) => update({ receivedDate: e.target.value })}
-                  />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Received (date & time)">
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className={dateInputClass}
+                      value={form.receivedDate}
+                      onChange={(e) => changeReceived({ receivedDate: e.target.value })}
+                    />
+                    <input
+                      type="time"
+                      className={timeInputClass}
+                      value={form.receivedTime}
+                      onChange={(e) => changeReceived({ receivedTime: e.target.value })}
+                    />
+                  </div>
                 </Field>
-                <Field label="Deadline">
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={form.deadline}
-                    onChange={(e) => update({ deadline: e.target.value })}
-                  />
+                <Field label="Deadline (date & time)">
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className={dateInputClass}
+                      value={form.deadline}
+                      onChange={(e) => update({ deadline: e.target.value, deadlineAuto: false })}
+                    />
+                    <input
+                      type="time"
+                      className={timeInputClass}
+                      value={form.deadlineTime}
+                      onChange={(e) => update({ deadlineTime: e.target.value, deadlineAuto: false })}
+                    />
+                  </div>
+                  {sla.enabled && form.deadlineAuto && (
+                    <p className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400">Auto: received + {sla.hours}h</p>
+                  )}
+                  {sla.enabled && !form.deadlineAuto && (
+                    <button type="button" onClick={resetToAuto} className="mt-1 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                      Reset to auto (received + {sla.hours}h)
+                    </button>
+                  )}
                   {form.receivedDate && form.deadline && form.deadline < form.receivedDate && (
                     <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Deadline is before the received date.</p>
                   )}
                   {isEdit && isTaskCompletedLate(task) && (
                     <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      <Clock size={11} /> Completed {daysLate(task)} day(s) after this deadline.
+                      <Clock size={11} /> Completed {lateText(task)} after this deadline.
                     </p>
                   )}
                 </Field>
@@ -306,8 +390,44 @@ export function TaskModal({ task, categories, assigners, onClose, onSave, onDele
                       </option>
                     ))}
                   </select>
-                  {assigners.length === 0 && (
-                    <p className="mt-1 text-[11px] text-slate-400">No assigners yet — add them in Settings → Assigners &amp; Departments.</p>
+                  {!newAssignerOpen && (
+                    <button type="button" onClick={() => setNewAssignerOpen(true)} className="mt-1 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                      + Add a new assigner
+                    </button>
+                  )}
+                  {newAssignerOpen && (
+                    <div className="mt-2 space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+                      <input
+                        autoFocus
+                        className={inputClass}
+                        placeholder="New assigner's name"
+                        value={newAssignerName}
+                        onChange={(e) => setNewAssignerName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            submitNewAssigner();
+                          }
+                        }}
+                      />
+                      <select className={inputClass} value={newAssignerDept} onChange={(e) => setNewAssignerDept(e.target.value)}>
+                        <option value="">No department</option>
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.name}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                      {newAssignerErr && <p className="text-[11px] text-rose-600">{newAssignerErr}</p>}
+                      <div className="flex gap-2">
+                        <button type="button" onClick={submitNewAssigner} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                          Add &amp; select
+                        </button>
+                        <button type="button" onClick={() => setNewAssignerOpen(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </Field>
               </div>

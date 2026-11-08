@@ -18,7 +18,7 @@ export function Badge({ children, className, style }) {
   );
 }
 
-export function ProgressBar({ pct, color = "#4f46e5" }) {
+export function ProgressBar({ pct, color = "#579bfc" }) {
   return (
     <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700/60 overflow-hidden">
       <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
@@ -26,12 +26,15 @@ export function ProgressBar({ pct, color = "#4f46e5" }) {
   );
 }
 
-export function StatCard({ icon: Icon, label, value, sub, accent = "text-indigo-600 dark:text-indigo-400" }) {
+export function StatCard({ icon: Icon, label, value, sub, color = "#579bfc" }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/60">
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: color }} />
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
-        <Icon size={16} className={accent} />
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: color }}>
+          <Icon size={16} className="text-white" />
+        </span>
       </div>
       <div className="mt-2 font-mono text-2xl font-semibold text-slate-900 dark:text-slate-50">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{sub}</div>}

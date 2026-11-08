@@ -1,6 +1,6 @@
 import { doc, setDoc, deleteDoc, onSnapshot, addDoc, collection } from "firebase/firestore";
 import { db } from "./firebase";
-import { taskCompletionPct, getReceivedDate, sessionMinutes, taskUsesBusinessHours } from "./timeUtils";
+import { subtaskStatus, taskCompletionPct, getReceivedDate, sessionMinutes, taskUsesBusinessHours } from "./timeUtils";
 
 /** Unguessable link id (~143 bits of randomness). */
 export function makeShareToken() {
@@ -35,7 +35,9 @@ function sanitizeTask(t, ctx) {
     status: t.status || "",
     assigner: t.assigner || "",
     receivedDate: getReceivedDate(t) || "",
+    receivedTime: t.receivedTime || "",
     deadline: t.deadline || "",
+    deadlineTime: t.deadlineTime || "",
     completedAt: t.completedAt || null,
     createdAt: t.createdAt || null,
     updatedAt: t.updatedAt || null,
@@ -43,7 +45,7 @@ function sanitizeTask(t, ctx) {
     estimate: t.estimate || null,
     totalHours: +sessions.reduce((a, s) => a + s.hours, 0).toFixed(2),
     pct: taskCompletionPct(t),
-    subtasks: (t.subtasks || []).map((s) => ({ id: s.id, title: s.title || "", done: !!s.done })),
+    subtasks: (t.subtasks || []).map((s) => ({ id: s.id, title: s.title || "", done: !!s.done, status: subtaskStatus(s) })),
     rounds: (t.rounds || []).map((r) => ({
       id: r.id,
       date: r.date || "",

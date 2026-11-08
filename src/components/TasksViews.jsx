@@ -16,8 +16,10 @@ import {
   Repeat,
   ArrowUpDown,
   CheckCircle2,
+  LayoutList,
 } from "lucide-react";
-import { STATUSES, PRIORITY_DOT, PRIORITY_STYLES, STATUS_STYLES, SORT_OPTIONS, sortTasks } from "../lib/constants";
+import { BoardView } from "./BoardView";
+import { STATUSES, STATUS_COLORS, PRIORITY_DOT, PRIORITY_STYLES, STATUS_STYLES, SORT_OPTIONS, sortTasks } from "../lib/constants";
 import {
   classNames,
   formatYMD,
@@ -33,6 +35,8 @@ import {
   isTaskOverdue,
   isTaskCompletedLate,
   daysLate,
+  lateText,
+  formatDateTimeDisplay,
   taskUsesBusinessHours,
   softStyle,
   solidStyle,
@@ -71,8 +75,8 @@ export function TaskCard({ task, holidaySet, workSchedule, catColor, assignerDep
         <span className={classNames("h-1.5 w-1.5 rounded-full", PRIORITY_DOT[task.priority])} title={task.priority} />
         {!taskUsesBusinessHours(task) && <Clock size={11} className="text-amber-500" titleAccess="Elapsed time" />}
         {completedLate && (
-          <span className="ml-auto flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Completed ${daysLate(task)} day(s) after deadline`}>
-            <Clock size={10} /> {daysLate(task)}d late
+          <span className="ml-auto flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Completed ${lateText(task)} after deadline`}>
+            <Clock size={10} /> {lateText(task)} late
           </span>
         )}
       </div>
@@ -88,7 +92,7 @@ export function TaskCard({ task, holidaySet, workSchedule, catColor, assignerDep
             overdue ? "font-medium text-rose-600 dark:text-rose-400" : completedLate && "font-medium text-amber-600 dark:text-amber-400"
           )}
         >
-          <CalendarDays size={12} /> {formatDateDisplay(task.deadline)}
+          <CalendarDays size={12} /> {formatDateTimeDisplay(task.deadline, task.deadlineTime)}
         </span>
         <span className="flex items-center gap-2 font-mono">
           {task.rounds?.length > 0 && (
@@ -234,7 +238,7 @@ export function TaskTableRow({ task: t, holidaySet, workSchedule, categoryColors
         {assignerDeptMap[t.assigner] && <span className="ml-1.5 text-xs text-slate-400">({assignerDeptMap[t.assigner]})</span>}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-        {formatDateDisplay(getReceivedDate(t)) || <span className="text-slate-300 dark:text-slate-600">—</span>}
+        {(getReceivedDate(t) ? formatDateTimeDisplay(getReceivedDate(t), t.receivedTime) : null) || <span className="text-slate-300 dark:text-slate-600">—</span>}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm">
         <span
@@ -249,9 +253,9 @@ export function TaskTableRow({ task: t, holidaySet, workSchedule, categoryColors
         >
           {overdue && <AlertTriangle size={12} />}
           {completedLate && <Clock size={12} />}
-          {formatDateDisplay(t.deadline)}
+          {formatDateTimeDisplay(t.deadline, t.deadlineTime)}
         </span>
-        {completedLate && <p className="text-[10px] text-amber-500">Completed {daysLate(t)}d late</p>}
+        {completedLate && <p className="text-[10px] text-amber-500">Completed {lateText(t)} late</p>}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -328,11 +332,14 @@ export function KanbanBoard({ tasks, holidaySet, workSchedule, categoryColors, a
               if (id) onStatusChange(id, status);
               setDraggingId(null);
             }}
-            className="flex flex-col rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/30"
+            className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/30"
+            style={{ borderTop: `4px solid ${STATUS_COLORS[status]}` }}
           >
             <div className="flex items-center justify-between px-3 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{status}</span>
-              <span className="rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+              <span className="rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-white" style={{ backgroundColor: STATUS_COLORS[status] }}>
+                {status}
+              </span>
+              <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[11px] font-semibold shadow-sm dark:bg-slate-800" style={{ color: STATUS_COLORS[status] }}>
                 {items.length}
               </span>
             </div>
@@ -500,8 +507,24 @@ export function TasksView({
   onExportPdf,
   onToggleTimer,
   onQuickAdd,
+  onPatchTask,
+  onQuickAddTo,
 }) {
-  const [viewMode, setViewMode] = useState("table");
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem("lpt_view_mode") || "board";
+    } catch (e) {
+      return "board";
+    }
+  });
+  function changeViewMode(id) {
+    setViewMode(id);
+    try {
+      localStorage.setItem("lpt_view_mode", id);
+    } catch (e) {
+      /* ignore */
+    }
+  }
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [monthCursor, setMonthCursor] = useState(null); // null = all months
   const [quickTitle, setQuickTitle] = useState("");
@@ -544,7 +567,7 @@ export function TasksView({
 
   const modeBtn = (id, Icon, label) => (
     <button
-      onClick={() => setViewMode(id)}
+      onClick={() => changeViewMode(id)}
       className={classNames(
         "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
         viewMode === id
@@ -589,6 +612,7 @@ export function TasksView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800/60">
+            {modeBtn("board", LayoutList, "Board")}
             {modeBtn("table", Table2, "Table")}
             {modeBtn("kanban", KanbanSquare, "Kanban")}
             {modeBtn("calendar", CalendarDays, "Calendar")}
@@ -647,6 +671,22 @@ export function TasksView({
         </div>
       </div>
 
+      {viewMode === "board" && (
+        <BoardView
+          tasks={filtered}
+          categories={categories}
+          assigners={assigners}
+          holidaySet={holidaySet}
+          workSchedule={workSchedule}
+          categoryColors={categoryColors}
+          onOpen={onOpen}
+          onStatusChange={onStatusChange}
+          onPatchTask={onPatchTask}
+          onQuickAddTo={onQuickAddTo}
+          onHoverTask={handleHoverTask}
+          onUnhoverTask={handleUnhoverTask}
+        />
+      )}
       {viewMode === "table" && (
         <TaskTable
           tasks={filtered}

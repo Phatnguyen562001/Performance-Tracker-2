@@ -218,16 +218,16 @@ export function AnalyticsView({ tasks, holidaySet, workSchedule, categoryColors,
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard icon={ListChecks} label={`Tasks (${periodLabel(periodType, anchor)})`} value={kpis.total} />
-        <StatCard icon={CheckCircle2} label="Completed" value={kpis.completed} accent="text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={Clock} label="Hours logged" value={formatHours(kpis.hours)} accent="text-amber-600 dark:text-amber-400" />
-        <StatCard icon={TrendingUp} label="Avg hours / task" value={formatHours(kpis.avgHours)} accent="text-indigo-600 dark:text-indigo-400" />
+        <StatCard icon={ListChecks} label={`Tasks (${periodLabel(periodType, anchor)})`} value={kpis.total} color="#0086c0" />
+        <StatCard icon={CheckCircle2} label="Completed" value={kpis.completed} color="#00c875" />
+        <StatCard icon={Clock} label="Hours logged" value={formatHours(kpis.hours)} color="#fdab3d" />
+        <StatCard icon={TrendingUp} label="Avg hours / task" value={formatHours(kpis.avgHours)} color="#a25ddc" />
         <StatCard
           icon={Target}
           label="Estimate accuracy"
           value={estimateAccuracy ? `${estimateAccuracy.diffPct > 0 ? "+" : ""}${estimateAccuracy.diffPct.toFixed(0)}%` : "—"}
           sub={estimateAccuracy ? `${estimateAccuracy.count} task(s) with an estimate` : "No estimates logged yet"}
-          accent={estimateAccuracy && Math.abs(estimateAccuracy.diffPct) > 20 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}
+          color={estimateAccuracy && Math.abs(estimateAccuracy.diffPct) > 20 ? "#e2445c" : "#00c875"}
         />
       </div>
 
@@ -275,8 +275,8 @@ export function AnalyticsView({ tasks, holidaySet, workSchedule, categoryColors,
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
               <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "dark" ? "#1e293b" : "#f8fafc" }} />
               <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />
-              <Bar yAxisId="left" dataKey="completed" name="Completed tasks" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={22} />
-              <Line yAxisId="right" type="monotone" dataKey="hours" name="Hours logged" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar yAxisId="left" dataKey="completed" name="Completed tasks" fill="#579bfc" radius={[6, 6, 0, 0]} barSize={22} />
+              <Line yAxisId="right" type="monotone" dataKey="hours" name="Hours logged" stroke="#fdab3d" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -314,8 +314,8 @@ export function AnalyticsView({ tasks, holidaySet, workSchedule, categoryColors,
                 <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "dark" ? "#1e293b" : "#f8fafc" }} />
                 <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />
-                <Bar dataKey="Estimated" fill="#94a3b8" radius={[0, 4, 4, 0]} />
-                <Bar dataKey="Actual" fill="#4f46e5" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="Estimated" fill="#c4c7d4" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="Actual" fill="#579bfc" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -331,7 +331,7 @@ export function AnalyticsView({ tasks, holidaySet, workSchedule, categoryColors,
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11, fill: textColor }} axisLine={{ stroke: gridColor }} tickLine={false} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "dark" ? "#1e293b" : "#f8fafc" }} />
-                <Bar dataKey="value" name="Tasks assigned" fill="#0d9488" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="value" name="Tasks assigned" fill="#a25ddc" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

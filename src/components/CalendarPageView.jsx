@@ -139,7 +139,7 @@ export function CalendarPageView({ tasks, events, categoryColors, onOpenTask, on
             <span className="h-2 w-2 rounded-full bg-slate-400" /> Task deadline
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-violet-500" /> Your plan
+            <span className="h-2 w-2 rounded-full bg-[#a25ddc]" /> Your plan
           </span>
         </div>
         <button
@@ -200,7 +200,7 @@ export function CalendarPageView({ tasks, events, categoryColors, onOpenTask, on
                         key={`e-${it.id}`}
                         onClick={() => setEditingEvent(it)}
                         title={it.title}
-                        className="flex w-full items-center gap-1 truncate rounded bg-violet-100 px-1.5 py-0.5 text-left text-[11px] font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/15 dark:text-violet-300"
+                        className="flex w-full items-center gap-1 truncate rounded bg-[#a25ddc] px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90"
                       >
                         {it.time && <span className="font-mono text-[10px] opacity-80">{it.time}</span>}
                         <span className="truncate">{it.title}</span>

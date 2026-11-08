@@ -24,6 +24,7 @@ export function TypeCard({ group, color, onClick }) {
   return (
     <button
       onClick={onClick}
+      style={{ borderTop: `4px solid ${color}` }}
       className="flex w-full flex-col rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/60 dark:hover:border-indigo-500/50"
     >
       <div className="mb-2 flex items-center justify-between">
@@ -98,12 +99,12 @@ export function TypeDetailModal({ group, color, holidaySet, workSchedule, onClos
 
         <div className="max-h-[75vh] overflow-y-auto px-5 py-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard icon={ListChecks} label="Completed" value={group.count} />
-            <StatCard icon={TrendingUp} label="Average" value={formatHours(group.avg)} accent="text-indigo-600 dark:text-indigo-400" />
-            <StatCard icon={BarChart3} label="Median" value={formatHours(group.median)} accent="text-indigo-600 dark:text-indigo-400" />
-            <StatCard icon={Clock} label="Total hours" value={formatHours(group.total)} accent="text-amber-600 dark:text-amber-400" />
-            <StatCard icon={Zap} label="Fastest" value={group.count ? formatHours(group.min) : "—"} accent="text-emerald-600 dark:text-emerald-400" />
-            <StatCard icon={Hourglass} label="Longest" value={group.count ? formatHours(group.max) : "—"} accent="text-rose-600 dark:text-rose-400" />
+            <StatCard icon={ListChecks} label="Completed" value={group.count} color="#00c875" />
+            <StatCard icon={TrendingUp} label="Average" value={formatHours(group.avg)} color="#579bfc" />
+            <StatCard icon={BarChart3} label="Median" value={formatHours(group.median)} color="#a25ddc" />
+            <StatCard icon={Clock} label="Total hours" value={formatHours(group.total)} color="#fdab3d" />
+            <StatCard icon={Zap} label="Fastest" value={group.count ? formatHours(group.min) : "—"} color="#00c875" />
+            <StatCard icon={Hourglass} label="Longest" value={group.count ? formatHours(group.max) : "—"} color="#e2445c" />
           </div>
 
           <div className="mt-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
@@ -136,7 +137,7 @@ export function TypeDetailModal({ group, color, holidaySet, workSchedule, onClos
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar yAxisId="left" dataKey="completed" name="Completed" fill={color} radius={[6, 6, 0, 0]} barSize={22} />
-                  <Line yAxisId="right" type="monotone" dataKey="avg" name="Avg hours" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line yAxisId="right" type="monotone" dataKey="avg" name="Avg hours" stroke="#fdab3d" strokeWidth={2} dot={{ r: 3 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
