@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { ChevronDown, ChevronRight, Plus, AlertCircle, Check, EyeOff, Layers, Repeat, X } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronRight, Plus, AlertCircle, Check, EyeOff, Layers, Repeat, X } from "lucide-react";
 import { STATUSES, PRIORITIES, MAX_SUBTASKS, STATUS_COLORS, PRIORITY_COLORS, stringToColor } from "../lib/constants";
 import {
   classNames,
@@ -9,6 +9,7 @@ import {
   taskTotalHours,
   formatHours,
   isTaskOverdue,
+  deadlineMoment,
   isTaskCompletedLate,
   formatRelativeTime,
   uid,
@@ -35,7 +36,8 @@ const COLUMNS = [
   { id: "deadline", label: "Deadline", w: "w-44", px: 135 },
   { id: "priority", label: "Priority", w: "w-32", px: 95 },
   { id: "assigner", label: "Assigner", w: "w-44", px: 130 },
-  { id: "category", label: "Category", w: "w-40", px: 150 },
+  { id: "category", label: "Category", w: "w-40", px: 115 },
+  { id: "subcategory", label: "Subcategory", w: "w-40", px: 150 },
   { id: "progress", label: "Progress", w: "w-36", px: 110 },
   { id: "hours", label: "Hours", w: "w-24", px: 90 },
   { id: "updated", label: "Last updated", w: "w-32", px: 120 },
@@ -386,9 +388,14 @@ function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, h
       )}
       {cols.includes("category") && (
         <td className={cell}>
-          <div className="flex h-full items-center justify-center px-2 text-center text-xs font-medium" style={{ backgroundColor: `${catColor}22`, color: catColor }}>
-            <span className="truncate">{t.subcategory || t.category}</span>
+          <div className="flex h-full items-center justify-center px-2 text-center text-xs font-medium text-white" style={{ backgroundColor: catColor }}>
+            <span className="truncate">{t.category || "—"}</span>
           </div>
+        </td>
+      )}
+      {cols.includes("subcategory") && (
+        <td className={cell}>
+          <p className="truncate px-2 text-center text-xs text-slate-700 dark:text-slate-200">{t.subcategory || <span className="text-slate-300">—</span>}</p>
         </td>
       )}
       {cols.includes("progress") && (
@@ -483,6 +490,21 @@ function AddRow({ colSpan, groupColor, onAdd, groupLabel }) {
   );
 }
 
+function SortBtn({ id, label, sort, onSort, left }) {
+  const active = sort && sort.col === id;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      onClick={() => onSort(id)}
+      title="Click to sort ↑ / ↓ / off"
+      className={classNames("group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800", left ? "" : "justify-center", active ? "text-indigo-600 dark:text-indigo-400" : "")}
+    >
+      <span className="truncate">{label}</span>
+      <Icon size={12} className={active ? "" : "opacity-0 group-hover:opacity-60"} />
+    </button>
+  );
+}
+
 export function BoardView({
   tasks,
   categories,
@@ -498,14 +520,18 @@ export function BoardView({
   onUnhoverTask,
 }) {
   const [groupBy, setGroupBy] = useState(() => load("lpt_board_group", "status"));
-  const [hidden, setHidden] = useState(() => load("lpt_board_hidden", ["category", "hours", "updated"]));
+  const [hidden, setHidden] = useState(() => load("lpt_board_hidden2", ["hours", "updated"]));
   const [collapsed, setCollapsed] = useState({});
   const [openSubs, setOpenSubs] = useState({});
   const [personFilter, setPersonFilter] = useState("");
   const [menu, setMenu] = useState(null); // "group" | "hide" | null
+  const [sort, setSort] = useState(() => load("lpt_board_sort", null)); // {col, dir} | null
+  useEffect(() => save("lpt_board_sort", sort), [sort]);
+  const clickSort = (col) =>
+    setSort((s) => (!s || s.col !== col ? { col, dir: "asc" } : s.dir === "asc" ? { col, dir: "desc" } : null));
 
   useEffect(() => save("lpt_board_group", groupBy), [groupBy]);
-  useEffect(() => save("lpt_board_hidden", hidden), [hidden]);
+  useEffect(() => save("lpt_board_hidden2", hidden), [hidden]);
 
   const cols = COLUMNS.filter((c) => !hidden.includes(c.id)).map((c) => c.id);
   const visibleCols = COLUMNS.filter((c) => cols.includes(c.id));
@@ -538,8 +564,37 @@ export function BoardView({
     const rest = shown.filter((t) => !claimed.has(t.id));
     if (rest.length) result.push({ key: "__other", label: "Other", color: "#a1a5b3", items: rest, patch: {} });
     // hide empty groups except for status/priority where an empty group is a useful drop target
+    if (sort) {
+      const ORD = { status: STATUSES, priority: ["High", "Medium", "Low"] };
+      const key = (t) => {
+        switch (sort.col) {
+          case "title": return (t.title || "").toLowerCase();
+          case "status": return STATUSES.indexOf(t.status);
+          case "priority": return ORD.priority.indexOf(t.priority);
+          case "received": return String(getReceivedDate(t) || "") + (t.receivedTime || "");
+          case "deadline": { const m = deadlineMoment(t); return m ? +m : null; }
+          case "assigner": return (t.assigner || "").toLowerCase() || null;
+          case "category": return (t.category || "").toLowerCase() || null;
+          case "subcategory": return (t.subcategory || "").toLowerCase() || null;
+          case "progress": return taskCompletionPct(t);
+          case "hours": return taskTotalHours(t, holidaySet, workSchedule);
+          case "updated": return t.updatedAt || 0;
+          default: return null;
+        }
+      };
+      const f = sort.dir === "asc" ? 1 : -1;
+      result.forEach((g) => {
+        g.items = [...g.items].sort((a, b) => {
+          const x = key(a), y = key(b);
+          if (x == null && y == null) return 0;
+          if (x == null) return 1; // empties always last
+          if (y == null) return -1;
+          return (x < y ? -1 : x > y ? 1 : 0) * f;
+        });
+      });
+    }
     return result.filter((g) => g.items.length > 0 || groupBy === "status" || groupBy === "priority");
-  }, [shown, groupBy, categories, assigners, categoryColors]);
+  }, [shown, groupBy, categories, assigners, categoryColors, sort, holidaySet, workSchedule]);
 
   const th = "h-9 border-l border-slate-100 px-3 text-center text-xs font-medium text-slate-500 dark:border-slate-800";
 
@@ -641,10 +696,12 @@ export function BoardView({
                     <tr className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60">
                       <th className="w-1.5 p-0" style={{ backgroundColor: g.color }} />
                       <th className="w-9" />
-                      <th className="h-9 min-w-[260px] px-3 text-left text-xs font-medium text-slate-500">Task</th>
+                      <th className="h-9 min-w-[260px] px-3 text-left text-xs font-medium text-slate-500">
+                        <SortBtn id="title" label="Task" sort={sort} onSort={clickSort} left />
+                      </th>
                       {visibleCols.map((c) => (
                         <th key={c.id} className={th}>
-                          {c.label}
+                          <SortBtn id={c.id} label={c.label} sort={sort} onSort={clickSort} />
                         </th>
                       ))}
                     </tr>
