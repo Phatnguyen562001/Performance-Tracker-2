@@ -119,7 +119,7 @@ export function TaskQuickInfoCard({ task, assignerDeptMap, pos }) {
   return (
     <div
       style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-      className="w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+      className="anim-menu w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
     >
       <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{task.title}</p>
       <p className="truncate text-xs text-slate-400">
@@ -221,8 +221,8 @@ export function DoubleConfirmDialog({ open, title, warning, detail, word = "RESE
   }, [open]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+    <div className="anim-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="anim-pop w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
         <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Step {step} of 2</p>
         <h3 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h3>
         {step === 1 ? (

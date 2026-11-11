@@ -14,6 +14,9 @@ import {
   getReceivedDate,
   nowHM,
   computeAutoDeadline,
+  setCycleContext,
+  reconcileReopen,
+  DEFAULT_WORKFLOW,
 } from "./lib/timeUtils";
 import { useLocalStorage } from "./lib/storage";
 import { useAuth } from "./lib/useAuth";
@@ -73,7 +76,8 @@ function MainApp() {
   const [everydayCompletions, setEverydayCompletions] = makeFieldState(cloudDoc, setCloudDoc, "everydayCompletions", {});
   const [events, setEvents] = makeFieldState(cloudDoc, setCloudDoc, "events", null);
   const [shareToken, setShareToken] = makeFieldState(cloudDoc, setCloudDoc, "shareToken", null);
-  const [slaSettings, setSlaSettings] = makeFieldState(cloudDoc, setCloudDoc, "slaSettings", { enabled: true, hours: 48 });
+  const [slaSettings, setSlaSettings] = makeFieldState(cloudDoc, setCloudDoc, "slaSettings", { enabled: true, hours: 48, reviewHours: 12 });
+  const [workflow, setWorkflow] = makeFieldState(cloudDoc, setCloudDoc, "workflow", DEFAULT_WORKFLOW);
   const [commentsSeenAt, setCommentsSeenAt] = makeFieldState(cloudDoc, setCloudDoc, "commentsSeenAt", 0);
   const [comments, setComments] = useState([]);
   const [shareIncludeNotes, setShareIncludeNotes] = makeFieldState(cloudDoc, setCloudDoc, "shareIncludeNotes", false);
@@ -163,6 +167,7 @@ function MainApp() {
   const safeEverydayTasks = everydayTasks || [];
   const safeEvents = events || [];
   const holidaySet = useMemo(() => new Set(holidays), [holidays]);
+  setCycleContext({ wf: workflow, holidaySet, workSchedule, sla: slaSettings });
   const categoryColors = useMemo(() => {
     const m = {};
     safeCategories.forEach((c, i) => {
@@ -182,7 +187,11 @@ function MainApp() {
             let completedAt = t.completedAt;
             if (data.status === "Completed" && t.status !== "Completed") completedAt = new Date().toISOString();
             if (data.status !== "Completed") completedAt = null;
-            return { ...t, ...data, completedAt, updatedAt: now };
+            const approved = [...(data.handoffs || [])].reverse().find((e) => e.type === "approved");
+            if (data.status === "Completed" && approved) completedAt = approved.at;
+            const merged = { ...t, ...data, completedAt, updatedAt: now };
+            const reopen = reconcileReopen(t, merged);
+            return reopen ? { ...merged, ...reopen } : merged;
           })
         );
       } else {
@@ -250,7 +259,9 @@ function MainApp() {
           let completedAt = t.completedAt;
           if (status === "Completed" && t.status !== "Completed") completedAt = new Date().toISOString();
           if (status !== "Completed") completedAt = null;
-          return { ...t, status, completedAt };
+          const next = { ...t, status, completedAt };
+          const reopen = reconcileReopen(t, next);
+          return reopen ? { ...next, ...reopen } : next;
         })
       );
     },
@@ -286,7 +297,14 @@ function MainApp() {
   // sensible defaults (and the subcategory's template, if one is set).
   const patchTask = useCallback(
     (id, patch) => {
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t)));
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          const next = { ...t, ...patch, updatedAt: new Date().toISOString() };
+          const reopen = patch.handoffs ? null : reconcileReopen(t, next);
+          return reopen ? { ...next, ...reopen } : next;
+        })
+      );
     },
     [setTasks]
   );
@@ -297,7 +315,7 @@ function MainApp() {
       if (!trimmed) return;
       const rDate = todayYMD();
       const rTime = nowHM();
-      const auto = slaSettings.enabled ? computeAutoDeadline(rDate, rTime, slaSettings.hours) : null;
+      const auto = slaSettings.enabled ? computeAutoDeadline(rDate, rTime, slaSettings.hours, { category: patch.category ?? safeCategories[0]?.name, subcategory: patch.subcategory ?? safeCategories[0]?.subcategories[0]?.name }) : null;
       const firstCat = safeCategories[0];
       const firstSub = firstCat?.subcategories[0];
       const now = new Date().toISOString();
@@ -342,6 +360,8 @@ function MainApp() {
       assigners: safeAssigners,
       holidays,
       workSchedule,
+      workflow,
+      slaSettings,
       everydayTasks: safeEverydayTasks,
       everydayCompletions,
       events: safeEvents,
@@ -386,6 +406,8 @@ function MainApp() {
       if (Array.isArray(data.departments)) setDepartments(data.departments);
       if (Array.isArray(data.assigners)) setAssigners(data.assigners);
       if (Array.isArray(data.workSchedule)) setWorkSchedule(data.workSchedule);
+      if (data.workflow && typeof data.workflow === "object") setWorkflow(data.workflow);
+      if (data.slaSettings && typeof data.slaSettings === "object") setSlaSettings(data.slaSettings);
       if (Array.isArray(data.everydayTasks)) setEverydayTasks(data.everydayTasks);
       if (data.everydayCompletions && typeof data.everydayCompletions === "object") setEverydayCompletions(data.everydayCompletions);
       if (Array.isArray(data.events)) setEvents(data.events);
@@ -522,6 +544,7 @@ function MainApp() {
                 onQuickAdd={quickAddTask}
                 onPatchTask={patchTask}
                 onQuickAddTo={quickAddTask}
+                sla={slaSettings}
               />
             )}
             {view === "types" && (
@@ -584,6 +607,8 @@ function MainApp() {
                 onImportData={importData}
                 slaSettings={slaSettings}
                 onSlaChange={setSlaSettings}
+                workflow={workflow}
+                onWorkflowChange={setWorkflow}
                 shareToken={shareToken}
                 shareIncludeNotes={shareIncludeNotes}
                 onEnableShare={enableShare}
@@ -595,7 +620,7 @@ function MainApp() {
         </div>
 
         {pendingDelete && (
-          <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl dark:bg-slate-100 dark:text-slate-900">
+          <div className="anim-toast fixed bottom-5 left-1/2 z-50 flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl dark:bg-slate-100 dark:text-slate-900">
             <span className="max-w-[220px] truncate">Deleted "{pendingDelete.task.title}"</span>
             <button onClick={undoDelete} className="shrink-0 font-medium text-indigo-300 hover:underline dark:text-indigo-600">
               Undo

@@ -9,6 +9,11 @@ import {
   taskTotalHours,
   isTaskOverdue,
   isTaskCompletedLate,
+  cycleStats,
+  inScope,
+  ballOf,
+  fmtSpan,
+  legsOf,
 } from "../lib/timeUtils";
 import { StatCard, ProgressBar } from "./ui";
 
@@ -42,6 +47,14 @@ export function DashboardView({ tasks, holidaySet, workSchedule, categoryCount, 
     return { total, completed, inProgress, overdue, completedLate, totalHours, completionRate, avgHoursPerTask, avgBySub };
   }, [tasks, holidaySet, workSchedule]);
 
+  const cyc = useMemo(() => {
+    const c = cycleStats(tasks);
+    const withBoss = tasks.filter((t) => inScope(t) && ballOf(t) === "boss");
+    const longest = withBoss.reduce((m, t) => Math.max(m, legsOf(t).slice(-1)[0]?.usedH || 0), 0);
+    return { ...c, withBoss: withBoss.length, longest };
+  }, [tasks]);
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+
   const upcoming = useMemo(() => {
     const today = todayYMD();
     const limit = formatYMD(addDays(new Date(), 7));
@@ -63,6 +76,17 @@ export function DashboardView({ tasks, holidaySet, workSchedule, categoryCount, 
         <StatCard icon={Clock} label="Total Hours" value={formatHours(stats.totalHours)} color="#a25ddc" />
         <StatCard icon={Clock} label="Avg Hours / Task" value={formatHours(stats.avgHoursPerTask)} color="#a25ddc" />
         <StatCard icon={FolderTree} label="Categories" value={categoryCount} color="#0086c0" />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/60">
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Response targets (your time only)</p>
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Time the supervisor holds a task is not counted against you.</p>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard icon={Clock} label="First response on time" value={pct(cyc.firstOk, cyc.firstTotal)} sub={`${cyc.firstOk} of ${cyc.firstTotal} met`} color="#00c875" />
+          <StatCard icon={Clock} label="Re-reviews on time" value={pct(cyc.reOk, cyc.reTotal)} sub={`${cyc.reOk} of ${cyc.reTotal} met`} color="#579bfc" />
+          <StatCard icon={TrendingUp} label="Avg rounds / task" value={cyc.cycles ? cyc.avgRounds.toFixed(1) : "—"} sub={`${cyc.cycles} task(s) with supervisor review`} color="#a25ddc" />
+          <StatCard icon={ListChecks} label="With supervisor now" value={cyc.withBoss} sub={cyc.withBoss ? `longest wait ${fmtSpan(cyc.longest)}` : "nothing pending"} color="#0086c0" />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

@@ -26,3 +26,45 @@
     display: block !important;
   }
 }
+
+/* Hide scrollbar but keep scrolling (trackpad, shift+wheel, touch) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ---------- iOS-style motion ---------- */
+@keyframes lpt-backdrop { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lpt-pop {
+  0%   { opacity: 0; transform: scale(0.92) translateY(10px); }
+  60%  { opacity: 1; transform: scale(1.015) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes lpt-menu {
+  0%   { opacity: 0; transform: scale(0.9) translateY(-6px); }
+  70%  { opacity: 1; transform: scale(1.02) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes lpt-toast {
+  0%   { opacity: 0; transform: translate(-50%, 24px) scale(0.96); }
+  70%  { opacity: 1; transform: translate(-50%, -3px) scale(1.01); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes lpt-fade-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes lpt-tick { 0% { transform: scale(1); } 45% { transform: scale(1.28); } 100% { transform: scale(1); } }
+
+.anim-backdrop { animation: lpt-backdrop 0.22s ease-out backwards; }
+.anim-pop      { animation: lpt-pop 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.anim-menu     { animation: lpt-menu 0.26s cubic-bezier(0.22, 1, 0.36, 1) backwards; transform-origin: top left; }
+.anim-toast    { animation: lpt-toast 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-fade     { animation: lpt-fade-down 0.22s ease-out backwards; }
+
+/* Press feedback on every button, spring back on release */
+button:not(:disabled) { transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s, box-shadow 0.15s, opacity 0.15s; }
+button:not(:disabled):active { transform: scale(0.96); }
+input[type="checkbox"]:checked { animation: lpt-tick 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+tr { transition: background-color 0.15s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-backdrop, .anim-pop, .anim-menu, .anim-toast, .anim-fade { animation: none; }
+  button:not(:disabled):active { transform: none; }
+  input[type="checkbox"]:checked { animation: none; }
+}

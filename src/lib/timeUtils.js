@@ -166,6 +166,7 @@ export function taskCompletionPct(task) {
     task clears this — but does NOT mean the task was never late, see below. */
 export function isTaskOverdue(task) {
   if (!task.deadline || task.status === "Completed") return false;
+  if (ballOf(task) === "boss") return false; // clock paused while the supervisor holds it
   if (task.deadlineTime) return deadlineMoment(task) < new Date();
   return task.deadline < todayYMD();
 }
@@ -184,7 +185,11 @@ export function nowHM() {
 }
 
 /** received + N hours (exact elapsed time) -> { deadline: "YYYY-MM-DD", deadlineTime: "HH:MM" } */
-export function computeAutoDeadline(receivedDate, receivedTime, hours) {
+export function computeAutoDeadline(receivedDate, receivedTime, hours, task) {
+  if (task) {
+    const x = firstDeadlineFor({ ...task }, receivedDate, receivedTime);
+    return { deadline: x.deadline, deadlineTime: x.deadlineTime };
+  }
   const [y, m, d] = (receivedDate || todayYMD()).split("-").map(Number);
   const [hh, mm] = (receivedTime || "00:00").split(":").map(Number);
   const dt = new Date(y, m - 1, d, hh, mm);
@@ -201,6 +206,7 @@ export function formatDateTimeDisplay(ymd, hm) {
     still counts as "overdue" today — this stays true forever once completed
     late, so lateness isn't erased just by ticking the task done. */
 export function isTaskCompletedLate(task) {
+  if (hasCycle(task)) return task.status === "Completed" && legsOf(task).some((l) => l.kind === "mine" && l.kpi !== false && l.ok === false);
   if (task.status !== "Completed" || !task.completedAt || !task.deadline) return false;
   if (task.deadlineTime) return new Date(task.completedAt) > deadlineMoment(task);
   return formatYMD(new Date(task.completedAt)) > task.deadline;
@@ -208,6 +214,10 @@ export function isTaskCompletedLate(task) {
 /** "2d" when a day or more late, otherwise "5h". */
 export function lateText(task) {
   if (!isTaskCompletedLate(task)) return "";
+  if (hasCycle(task)) {
+    const bad = legsOf(task).find((l) => l.kind === "mine" && l.kpi !== false && l.ok === false);
+    return bad ? `R${bad.n}` : "";
+  }
   const days = daysLate(task);
   if (days >= 1) return `${days}d`;
   const hrs = Math.max(1, Math.ceil((new Date(task.completedAt) - deadlineMoment(task)) / 3600000));
@@ -404,4 +414,326 @@ export function subtaskStatus(sub) {
   if (sub.status && (sub.status === "Completed") === !!sub.done) return sub.status;
   if (sub.done) return "Completed";
   return sub.status && sub.status !== "Completed" ? sub.status : "Not Started";
+}
+
+
+/* =========================================================================
+   REVIEW WORKFLOW — configurable "Ball" (who currently holds the task)
+   -------------------------------------------------------------------------
+   Settings (cloud field `workflow`) define:
+     scope      which categories / subcategories use Ball
+     stages     ordered holders, e.g. "With me" (my clock runs) and
+                "With supervisor" (my clock paused), each with: label, colour,
+                mine (clock runs), status set on entry, newDeadline, kpi
+     limits     hours for re-review (2nd round) and later rounds
+     overrides  per category / subcategory: first, review, later, business
+     business   count business hours (office schedule + holidays) instead of
+                continuous hours
+   A task stores only its own events:
+     task.handoffs = [{id, type:"move", to: stageId|"done", at: ISO, mine,
+                       limitH (leaving a "mine" stage), nextLimitH/biz/kpi
+                       (entering a "mine" stage)}]
+   Old v8 events ("sent"/"returned"/"approved") are converted on the fly.
+   ========================================================================= */
+
+export const DONE_STAGE = { id: "done", label: "Done", color: "#00c875", mine: false };
+export const DEFAULT_WORKFLOW = {
+  scope: { mode: "all", items: [] },
+  stages: [
+    { id: "me", label: "With me", color: "#fdab3d", mine: true, status: "In Progress", newDeadline: true, kpi: true },
+    { id: "boss", label: "With supervisor", color: "#579bfc", mine: false, status: "Waiting" },
+  ],
+  limits: { review: 12, later: 12 },
+  overrides: [],
+  business: false,
+};
+
+let CTX = { wf: DEFAULT_WORKFLOW, holidaySet: new Set(), workSchedule: DEFAULT_WORK_SESSIONS, sla: { enabled: true, hours: 48 } };
+/** Called by the app on every render so the pure helpers below see current settings. */
+export function setCycleContext(c) {
+  CTX = { ...CTX, ...c, wf: normalizeWorkflow(c.wf ?? CTX.wf) };
+}
+export function normalizeWorkflow(w) {
+  const d = DEFAULT_WORKFLOW;
+  const x = w && typeof w === "object" ? w : {};
+  let stages = Array.isArray(x.stages) && x.stages.length ? x.stages.filter((st) => st && st.id) : d.stages;
+  if (!stages.some((st) => st.mine)) stages = [d.stages[0], ...stages];
+  return {
+    scope: { mode: x.scope?.mode === "selected" ? "selected" : "all", items: Array.isArray(x.scope?.items) ? x.scope.items : [] },
+    stages,
+    limits: { review: Number(x.limits?.review) || d.limits.review, later: Number(x.limits?.later) || Number(x.limits?.review) || d.limits.later },
+    overrides: Array.isArray(x.overrides) ? x.overrides : [],
+    business: !!x.business,
+  };
+}
+export const getWorkflow = () => CTX.wf;
+export const firstMineStage = (wf = CTX.wf) => wf.stages.find((st) => st.mine) || wf.stages[0];
+export const firstWaitStage = (wf = CTX.wf) => wf.stages.find((st) => !st.mine) || { id: "boss", label: "With supervisor", color: "#579bfc", mine: false, status: "Waiting" };
+export function stageById(id, wf = CTX.wf) {
+  if (id === "done") return DONE_STAGE;
+  return wf.stages.find((st) => st.id === id) || { id, label: id, color: "#a1a5b3", mine: false };
+}
+/** Does this task use Ball at all? */
+export function inScope(task, wf = CTX.wf) {
+  if (wf.scope.mode !== "selected") return true;
+  const items = wf.scope.items;
+  return items.includes(task.category) || items.includes(`${task.category}/${task.subcategory}`);
+}
+/** Time rule for a task: category/subcategory override, else defaults. */
+export function ruleFor(task, wf = CTX.wf) {
+  const o = wf.overrides.find((x) => x.key === `${task.category}/${task.subcategory}`) || wf.overrides.find((x) => x.key === task.category);
+  const num = (v) => (v === "" || v == null || isNaN(Number(v)) ? null : Number(v));
+  const first = num(o?.first) ?? (Number(CTX.sla?.hours) || 48);
+  const review = num(o?.review) ?? wf.limits.review;
+  const later = num(o?.later) ?? (num(o?.review) != null ? num(o?.review) : wf.limits.later);
+  return { first, review, later, business: o && o.business != null && o.business !== "" ? !!o.business : wf.business };
+}
+export const limitForRound = (task, n) => {
+  const r = ruleFor(task);
+  return n <= 1 ? r.first : n === 2 ? r.review : r.later;
+};
+
+/* ---- time helpers (continuous or business hours) ---- */
+const loc = (d) => toDateTimeLocalValue(d);
+export function measureHours(start, end, biz) {
+  if (!start || !end) return 0;
+  if (biz) return businessMinutesBetween(loc(start), loc(end), CTX.holidaySet, CTX.workSchedule) / 60;
+  return (end - start) / 3600000;
+}
+/** start + N hours → Date (business hours are walked forward minute-bisect). */
+export function addHours(start, hours, biz) {
+  if (!biz) return new Date(start.getTime() + Math.round(hours * 60) * 60000);
+  const target = Math.round(hours * 60);
+  let lo = 0, hi = 60 * 24 * 90; // up to 90 days
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const m = businessMinutesBetween(loc(start), loc(new Date(start.getTime() + mid * 60000)), CTX.holidaySet, CTX.workSchedule);
+    if (m >= target) hi = mid;
+    else lo = mid + 1;
+  }
+  return new Date(start.getTime() + lo * 60000);
+}
+function deadlineFrom(date) {
+  return { deadline: formatYMD(date), deadlineTime: `${pad2(date.getHours())}:${pad2(date.getMinutes())}` };
+}
+/** Auto deadline for the FIRST round of a task (respects per-category hours / business hours). */
+export function firstDeadlineFor(task, receivedDate, receivedTime) {
+  const r = ruleFor(task);
+  const [y, m, d] = (receivedDate || todayYMD()).split("-").map(Number);
+  const [hh, mm] = (receivedTime || "00:00").split(":").map(Number);
+  return { ...deadlineFrom(addHours(new Date(y, m - 1, d, hh || 0, mm || 0), r.first, r.business)), hours: r.first, business: r.business };
+}
+
+export function receivedMoment(task) {
+  const ymd = getReceivedDate(task);
+  if (!ymd) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const [hh, mm] = (task.receivedTime || "00:00").split(":").map(Number);
+  return new Date(y, m - 1, d, hh || 0, mm || 0);
+}
+
+/** Events in the new format (old v8 events converted). */
+export function eventsOf(task) {
+  const wf = CTX.wf;
+  return (task.handoffs || []).map((e) => {
+    if (e.type !== "sent" && e.type !== "returned" && e.type !== "approved") return e;
+    if (e.type === "sent") return { ...e, type: "move", to: firstWaitStage(wf).id, mine: false };
+    if (e.type === "returned") return { ...e, type: "move", to: firstMineStage(wf).id, mine: true };
+    return { ...e, type: "move", to: "done", mine: false };
+  });
+}
+export function hasCycle(task) {
+  return inScope(task) && eventsOf(task).length > 0;
+}
+export function currentStage(task) {
+  const ev = eventsOf(task);
+  const last = ev[ev.length - 1];
+  if (!last) return firstMineStage();
+  if (last.to === "done" && task.status !== "Completed") return firstMineStage(); // re-opened
+  return stageById(last.to);
+}
+/** Clock semantics: "me" (my clock runs) | "boss" (paused, waiting on someone) | "done" */
+export function ballOf(task) {
+  if (task.status === "Completed") return "done";
+  if (!inScope(task)) return "me";
+  const st = currentStage(task);
+  if (st.id === "done") return "done";
+  return st.mine ? "me" : "boss";
+}
+export function fmtSpan(hours) {
+  if (hours == null || isNaN(hours)) return "—";
+  const h = Math.max(0, hours);
+  if (h < 1) return `${Math.round(h * 60)}m`;
+  if (h < 48) {
+    const whole = Math.floor(h);
+    const m = Math.round((h - whole) * 60);
+    return m ? `${whole}h ${m}m` : `${whole}h`;
+  }
+  const d = Math.floor(h / 24);
+  const r = Math.round(h - d * 24);
+  return r ? `${d}d ${r}h` : `${d}d`;
+}
+
+/** Legs: "mine" legs (counted against me) and "wait" legs (shown, not counted). */
+export function legsOf(task) {
+  const ev = eventsOf(task);
+  const dl = deadlineMoment(task);
+  const rule0 = ruleFor(task);
+  const legs = [];
+  let n = 1;
+  let mineLeg = { start: receivedMoment(task), biz: rule0.business, kpi: firstMineStage().kpi !== false, stage: firstMineStage().id };
+  let wait = null;
+  const closeMine = (end, limitH, open) => {
+    const used = mineLeg.start && end ? measureHours(mineLeg.start, end, mineLeg.biz) : 0;
+    legs.push({ kind: "mine", n, start: mineLeg.start, end: open ? null : end, open: !!open, limitH, usedH: used, ok: limitH == null ? true : used <= limitH + 1e-6, kpi: mineLeg.kpi, biz: mineLeg.biz, stage: mineLeg.stage });
+    mineLeg = null;
+  };
+  const closeWait = (end, approved) => {
+    legs.push({ kind: "wait", n, start: wait.start, end, open: !end, usedH: ((end || new Date()) - wait.start) / 3600000, stage: wait.stage, approved: !!approved });
+    wait = null;
+  };
+  for (const e of ev) {
+    const at = new Date(e.at);
+    const toMine = !!e.mine && e.to !== "done";
+    if (mineLeg) {
+      if (toMine) {
+        mineLeg.stage = e.to;
+      } else {
+        closeMine(at, e.limitH);
+        wait = { start: at, stage: e.to };
+      }
+    } else if (wait) {
+      if (wait.stage === "done") wait = null;
+      else closeWait(at, e.to === "done");
+      if (toMine) {
+        n += 1;
+        mineLeg = { start: at, biz: e.biz != null ? e.biz : rule0.business, kpi: e.kpi !== false, stage: e.to };
+      } else {
+        wait = { start: at, stage: e.to };
+      }
+    }
+    if (e.to === "done") wait = { start: at, stage: "done", doneAt: at };
+  }
+  const completedEnd = task.status === "Completed" && task.completedAt ? new Date(task.completedAt) : null;
+  if (mineLeg) {
+    const limitH = dl && mineLeg.start ? Math.floor(measureHours(mineLeg.start, dl, mineLeg.biz) * 60) / 60 : null;
+    closeMine(completedEnd || new Date(), limitH, !completedEnd);
+  } else if (wait && wait.stage !== "done") {
+    closeWait(completedEnd, !!completedEnd);
+  }
+  return legs;
+}
+
+function mineCount(legs) {
+  return legs.filter((l) => l.kind === "mine").length;
+}
+
+/** Move the ball to a stage ("done" = approved). Returns a patch for the task. */
+export function applyMove(task, toId, atDate = new Date()) {
+  const wf = CTX.wf;
+  const stage = stageById(toId, wf);
+  const cur = ballOf(task);
+  const at = atDate.toISOString();
+  const ev = { id: uid(), type: "move", to: toId, at, mine: !!stage.mine };
+  const h = [...eventsOf(task)];
+  const legs = legsOf(task);
+  const openMine = [...legs].reverse().find((l) => l.kind === "mine" && l.open);
+  const patch = {};
+  if (cur === "me" && !stage.mine && openMine) {
+    const dl = deadlineMoment(task);
+    ev.limitH = dl ? Math.max(0, Math.floor(measureHours(openMine.start, dl, openMine.biz) * 60) / 60) : null;
+  }
+  if (cur !== "me" && stage.mine) {
+    const n = mineCount(legs) + 1;
+    const r = ruleFor(task);
+    const limit = n <= 1 ? r.first : n === 2 ? r.review : r.later;
+    ev.nextLimitH = limit;
+    ev.biz = r.business;
+    ev.kpi = stage.kpi !== false;
+    if (stage.newDeadline !== false) Object.assign(patch, deadlineFrom(addHours(atDate, limit, r.business)), { deadlineAuto: true });
+  }
+  h.push(ev);
+  if (toId === "done") {
+    patch.status = "Completed";
+    patch.completedAt = at;
+  } else {
+    patch.completedAt = null;
+    if (stage.status && stage.status !== "keep") patch.status = stage.status;
+  }
+  return { ...patch, handoffs: h };
+}
+
+/** Undo the most recent move. */
+export function undoLastHandoff(task) {
+  const h = [...eventsOf(task)];
+  h.pop();
+  const last = h[h.length - 1];
+  const patch = { handoffs: h };
+  const st = last ? stageById(last.to) : firstMineStage();
+  if (last && last.to === "done") {
+    patch.status = "Completed";
+    patch.completedAt = last.at;
+    return patch;
+  }
+  patch.completedAt = null;
+  if (st.status && st.status !== "keep") patch.status = st.status;
+  if (st.mine) {
+    if (last) {
+      const legs = legsOf({ ...task, handoffs: h, status: "In Progress" });
+      const open = [...legs].reverse().find((l) => l.kind === "mine" && l.open);
+      const r = ruleFor(task);
+      const n = open ? open.n : 1;
+      if (open && n > 1) Object.assign(patch, deadlineFrom(addHours(open.start, n === 2 ? r.review : r.later, open.biz)), { deadlineAuto: true });
+    } else if (CTX.sla?.enabled) {
+      Object.assign(patch, firstDeadlineFor(task, getReceivedDate(task), task.receivedTime), { deadlineAuto: true });
+    }
+  }
+  return patch;
+}
+
+/** Edit the timestamp of one event (you forgot to click at the time). */
+export function setHandoffTime(task, id, atDate) {
+  const h = eventsOf(task).map((e) => (e.id === id ? { ...e, at: atDate.toISOString() } : e));
+  const last = h[h.length - 1];
+  const patch = { handoffs: h };
+  if (last && last.id === id) {
+    const st = stageById(last.to);
+    if (st.mine && last.nextLimitH != null && st.newDeadline !== false) Object.assign(patch, deadlineFrom(addHours(atDate, last.nextLimitH, !!last.biz)), { deadlineAuto: true });
+    if (last.to === "done") patch.completedAt = last.at;
+  }
+  return patch;
+}
+
+/** When a finished task is un-ticked, start a fresh round with me. */
+export function reconcileReopen(oldTask, newTask) {
+  if (!oldTask || oldTask.status !== "Completed" || newTask.status === "Completed") return null;
+  if (!inScope(newTask)) return null;
+  const ev = eventsOf(oldTask);
+  const last = ev[ev.length - 1];
+  if (!last || last.to !== "done") return null;
+  const asOpen = { ...newTask, handoffs: oldTask.handoffs, status: "Completed" };
+  const patch = applyMove({ ...asOpen }, firstMineStage().id, new Date());
+  // applyMove from "done" → mine: ballOf() is "done" here, so the new round starts
+  return { ...patch, status: firstMineStage().status && firstMineStage().status !== "keep" ? firstMineStage().status : "In Progress", completedAt: null };
+}
+
+/** Roll-up used by Dashboard. */
+export function cycleStats(tasks) {
+  let firstTotal = 0, firstOk = 0, reTotal = 0, reOk = 0, cycles = 0, rounds = 0;
+  tasks.forEach((t) => {
+    if (!hasCycle(t)) return;
+    cycles += 1;
+    legsOf(t).forEach((l) => {
+      if (l.kind !== "mine" || l.open || l.kpi === false) return;
+      rounds += 1;
+      if (l.n === 1) {
+        firstTotal += 1;
+        if (l.ok) firstOk += 1;
+      } else {
+        reTotal += 1;
+        if (l.ok) reOk += 1;
+      }
+    });
+  });
+  return { firstTotal, firstOk, reTotal, reOk, cycles, avgRounds: cycles ? rounds / cycles : 0 };
 }

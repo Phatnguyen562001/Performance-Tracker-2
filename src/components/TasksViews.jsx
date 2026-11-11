@@ -162,7 +162,7 @@ export function TaskTable({ tasks, holidaySet, workSchedule, categoryColors, ass
       <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
         <thead className="bg-slate-50 dark:bg-slate-900/60">
           <tr>
-            {["Task", "Category", "Priority", "Status", "Assigner", "Received", "Deadline", "Progress", "Hours", "Actions"].map((h) => (
+            {["Task", "Category", "Priority", "Status", "Assigner", "Received", "Deadline", "Progress", "Hours"].map((h) => (
               <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {h}
               </th>
@@ -270,47 +270,6 @@ export function TaskTableRow({ task: t, holidaySet, workSchedule, categoryColors
           {formatHours(hours)}
           {!taskUsesBusinessHours(t) && <Clock size={11} className="text-amber-500" />}
         </span>
-      </td>
-      <td className="whitespace-nowrap px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onStatusChange(t.id, isDone ? "In Progress" : "Completed");
-            }}
-            title={isDone ? "Completed — click to un-complete" : "Mark as Completed"}
-            className={classNames(
-              "inline-flex h-8 w-8 items-center justify-center rounded-md border transition",
-              isDone
-                ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500/50"
-                : "border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:hover:border-emerald-500/50"
-            )}
-          >
-            <CheckCircle2 size={15} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleTimer(t.id);
-            }}
-            className={classNames(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
-              isRunning
-                ? "bg-rose-600 text-white hover:bg-rose-500"
-                : "border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
-            )}
-          >
-            {isRunning ? (
-              <>
-                <Square size={11} className="fill-current" /> End ({formatClockTime(t.runningStart)})
-              </>
-            ) : (
-              <>
-                <Play size={11} className="fill-current" /> Start
-              </>
-            )}
-          </button>
-        </div>
       </td>
     </tr>
   );
@@ -509,6 +468,7 @@ export function TasksView({
   onQuickAdd,
   onPatchTask,
   onQuickAddTo,
+  sla,
 }) {
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -679,6 +639,7 @@ export function TasksView({
           holidaySet={holidaySet}
           workSchedule={workSchedule}
           categoryColors={categoryColors}
+          sla={sla}
           onOpen={onOpen}
           onStatusChange={onStatusChange}
           onPatchTask={onPatchTask}

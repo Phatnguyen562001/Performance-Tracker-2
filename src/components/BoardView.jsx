@@ -1,12 +1,22 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronRight, Plus, AlertCircle, Check, EyeOff, Layers, Repeat, X } from "lucide-react";
+import { Play, Pause, ArrowUp, ArrowDown, Filter, ChevronDown, ChevronRight, Plus, AlertCircle, Check, EyeOff, Layers, Repeat, X } from "lucide-react";
 import { STATUSES, PRIORITIES, MAX_SUBTASKS, STATUS_COLORS, PRIORITY_COLORS, stringToColor } from "../lib/constants";
 import {
   classNames,
   formatDateTimeDisplay,
+  formatDateDisplay,
+  formatYMD,
+  applyMove,
+  undoLastHandoff,
+  inScope,
+  ballOf,
   getReceivedDate,
   taskCompletionPct,
   taskTotalHours,
+  taskTotalMinutes,
+  sessionMinutes,
+  taskUsesBusinessHours,
+  toDateTimeLocalValue,
   formatHours,
   isTaskOverdue,
   deadlineMoment,
@@ -16,6 +26,7 @@ import {
   subtaskStatus,
 } from "../lib/timeUtils";
 import { useHoverIntent } from "./ui";
+import { ballInfo, moveOptions } from "./CyclePanel";
 
 /* =========================================================================
    BOARD VIEW — grouped, collapsible, colour-cell layout (Monday-style)
@@ -32,13 +43,16 @@ const GROUP_OPTIONS = [
 
 const COLUMNS = [
   { id: "status", label: "Status", w: "w-36", px: 120 },
+  { id: "ball", label: "Ball", w: "w-36", px: 125 },
   { id: "received", label: "Received", w: "w-40", px: 115 },
   { id: "deadline", label: "Deadline", w: "w-44", px: 135 },
+  { id: "tracking", label: "Time tracking", w: "w-40", px: 150 },
   { id: "priority", label: "Priority", w: "w-32", px: 95 },
   { id: "assigner", label: "Assigner", w: "w-44", px: 130 },
   { id: "category", label: "Category", w: "w-40", px: 115 },
   { id: "subcategory", label: "Subcategory", w: "w-40", px: 150 },
   { id: "progress", label: "Progress", w: "w-36", px: 110 },
+  { id: "completed", label: "Completed", w: "w-40", px: 150 },
   { id: "hours", label: "Hours", w: "w-24", px: 90 },
   { id: "updated", label: "Last updated", w: "w-32", px: 120 },
 ];
@@ -87,7 +101,7 @@ function CellMenu({ anchor, options, onPick, onClose }) {
     <div
       ref={ref}
       style={{ position: "fixed", top, left: anchor.left, zIndex: 9999, minWidth: Math.max(anchor.width, 150) }}
-      className="space-y-1 rounded-lg border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+      className="anim-menu space-y-1 rounded-lg border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
     >
       {options.map((o) => (
         <button
@@ -137,7 +151,7 @@ function SubtaskRow({ sub, groupColor, span, statusCol, restSpan, onChange, onRe
     else setDraft(sub.title);
   }
   return (
-    <tr className="group/sub border-b border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/70">
+    <tr className="anim-fade group/sub border-b border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/70">
       <td className="w-1.5 p-0" style={{ backgroundColor: `${groupColor}88` }} />
       <td />
       <td colSpan={statusCol ? 1 : span} className="py-1 pl-8 pr-3">
@@ -242,7 +256,60 @@ function AddSubtaskRow({ groupColor, span, onAdd, full }) {
   );
 }
 
-function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, holidaySet, workSchedule, categoryColors, onOpen, onStatusChange, onPatchTask, onHoverTask, onUnhoverTask }) {
+/** Monday-style stopwatch: ▶ starts, ⏸ pauses and saves the session. Pausing never completes the task. */
+function TrackCell({ task: t, holidaySet, workSchedule, onPatchTask }) {
+  const running = !!t.runningStart;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const nowVal = toDateTimeLocalValue(new Date());
+  const biz = taskUsesBusinessHours(t);
+  let secs = Math.round(taskTotalMinutes(t, holidaySet, workSchedule) * 60);
+  if (running) {
+    const startMs = t.runningStartMs || new Date(t.runningStart).getTime();
+    const wall = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    // business-hours tasks only count office time; resolution is per minute, so add the live seconds of the current minute
+    const counted = Math.round(sessionMinutes({ start: t.runningStart, end: nowVal }, biz, holidaySet, workSchedule) * 60);
+    // inside office hours the two agree, so show live seconds; outside them show only what counts
+    secs += biz && Math.abs(counted - Math.floor(wall / 60) * 60) > 60 ? counted : wall;
+  }
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+
+  function toggle(e) {
+    e.stopPropagation();
+    if (running) {
+      // sessions are stored in whole minutes: round the stopwatch time to the nearest minute
+      const startMs = t.runningStartMs || new Date(t.runningStart).getTime();
+      const mins = Math.round((Date.now() - startMs) / 60000);
+      const end = toDateTimeLocalValue(new Date(new Date(t.runningStart).getTime() + mins * 60000));
+      onPatchTask(t.id, { runningStart: null, runningStartMs: null, ...(mins > 0 ? { sessions: [...(t.sessions || []), { id: uid(), start: t.runningStart, end }] } : {}) });
+    } else {
+      onPatchTask(t.id, { runningStart: toDateTimeLocalValue(new Date()), runningStartMs: Date.now() });
+    }
+  }
+  return (
+    <div className="flex h-full items-center justify-center gap-2 px-2">
+      <button
+        onClick={toggle}
+        title={running ? "Pause (saves this session)" : "Start tracking"}
+        className={classNames("flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white shadow-sm", running ? "bg-rose-500 hover:bg-rose-600" : "bg-[#0073ea] hover:bg-[#0060c0]")}
+      >
+        {running ? <Pause size={12} className="fill-current" /> : <Play size={12} className="ml-0.5 fill-current" />}
+      </button>
+      <span className={classNames("font-mono text-xs tabular-nums", running ? "font-semibold text-rose-600 dark:text-rose-400" : "text-slate-600 dark:text-slate-300")}>
+        {h}h {m}m {s}s
+      </span>
+    </div>
+  );
+}
+
+function BoardRow({ task: t, sla, groupColor, cols, expanded, onToggleExpand, span, holidaySet, workSchedule, categoryColors, onOpen, onStatusChange, onPatchTask, onHoverTask, onUnhoverTask }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(t.title);
   const hover = useHoverIntent((pos) => onHoverTask(t, pos), onUnhoverTask);
@@ -344,6 +411,25 @@ function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, h
           />
         </td>
       )}
+      {cols.includes("ball") && (
+        <td className={cell}>
+          {(() => {
+            const b = ballInfo(t);
+            if (!b) return <p className="text-center text-xs text-slate-300" title="Ball is off for this category (Settings)">—</p>;
+            let opts = moveOptions(t).map((st) => ({ value: st.id, label: `→ ${st.label}`, color: st.color || "#6366f1" }));
+            if ((t.handoffs || []).length > 0) opts = [...opts, { value: "undo", label: "↶ Undo last step", color: "#a1a5b3" }];
+            opts = [...opts, { value: "edit", label: "✎ Edit times…", color: "#6b7280" }];
+            return (
+              <ColorCell
+                value={b.label}
+                color={b.color}
+                options={opts}
+                onPick={(v) => (v === "edit" ? onOpen(t) : v === "undo" ? onPatchTask(t.id, undoLastHandoff(t)) : onPatchTask(t.id, applyMove(t, v)))}
+              />
+            );
+          })()}
+        </td>
+      )}
       {cols.includes("received") && (
         <td className={classNames(cell, "px-3 text-center text-xs text-slate-600 dark:text-slate-300")}>
           {getReceivedDate(t) ? formatDateTimeDisplay(getReceivedDate(t), t.receivedTime) : "—"}
@@ -355,6 +441,7 @@ function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, h
             {overdue && <AlertCircle size={14} className="shrink-0 text-rose-500" />}
             {done && !late && <Check size={14} className="shrink-0 text-emerald-500" />}
             {late && <AlertCircle size={14} className="shrink-0 text-amber-500" />}
+            {ballOf(t) === "boss" && <span title="Your clock is paused while the supervisor holds it" className="text-[11px] text-sky-500">⏸</span>}
             <span
               className={classNames(
                 overdue ? "font-semibold text-rose-600" : late ? "text-amber-600" : done ? "text-slate-400 line-through" : "text-slate-600 dark:text-slate-300"
@@ -363,6 +450,11 @@ function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, h
               {formatDateTimeDisplay(t.deadline, t.deadlineTime)}
             </span>
           </div>
+        </td>
+      )}
+      {cols.includes("tracking") && (
+        <td className={cell}>
+          <TrackCell task={t} holidaySet={holidaySet} workSchedule={workSchedule} onPatchTask={onPatchTask} />
         </td>
       )}
       {cols.includes("priority") && (
@@ -406,6 +498,11 @@ function BoardRow({ task: t, groupColor, cols, expanded, onToggleExpand, span, h
             </div>
             <span className="w-8 text-right font-mono text-[11px] text-slate-500">{pct}%</span>
           </div>
+        </td>
+      )}
+      {cols.includes("completed") && (
+        <td className={classNames(cell, "px-3 text-center text-xs text-slate-600 dark:text-slate-300")}>
+          {t.completedAt ? <span className="whitespace-nowrap">{formatDateTimeDisplay(formatYMD(new Date(t.completedAt)), `${String(new Date(t.completedAt).getHours()).padStart(2, "0")}:${String(new Date(t.completedAt).getMinutes()).padStart(2, "0")}`)}</span> : "—"}
         </td>
       )}
       {cols.includes("hours") && (
@@ -490,20 +587,217 @@ function AddRow({ colSpan, groupColor, onAdd, groupLabel }) {
   );
 }
 
-function SortBtn({ id, label, sort, onSort, left }) {
+/* ---------- Excel-style column filter + sort ---------- */
+const DATE_COLS = new Set(["received", "deadline", "completed", "updated"]);
+const NO_LIST_COLS = new Set(["title", "hours"]);
+const COL_LABEL = Object.fromEntries([["title", "Task"], ...COLUMNS.map((c) => [c.id, c.label])]);
+
+function filterActive(f) {
+  return !!f && ((f.hide && f.hide.length > 0) || f.from || f.to || f.text);
+}
+function dayOf(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? "" : formatYMD(d);
+}
+/** The text a cell holds, used for the value list and for filtering. "" = blank. */
+function cellValue(t, col) {
+  switch (col) {
+    case "status": return t.status || "";
+    case "priority": return t.priority || "";
+    case "assigner": return t.assigner || "";
+    case "category": return t.category || "";
+    case "subcategory": return t.subcategory || "";
+    case "ball": return ballInfo(t)?.label || "";
+    case "received": return getReceivedDate(t) || "";
+    case "deadline": return t.deadline || "";
+    case "completed": return dayOf(t.completedAt);
+    case "updated": return dayOf(t.updatedAt || t.createdAt);
+    case "progress": {
+      const p = taskCompletionPct(t);
+      return p === 0 ? "0%" : p === 100 ? "100%" : "1–99%";
+    }
+    default: return "";
+  }
+}
+function passesFilter(t, col, f) {
+  if (!f) return true;
+  if (col === "title") return !f.text || (t.title || "").toLowerCase().includes(f.text.toLowerCase());
+  const v = cellValue(t, col);
+  if (f.hide && f.hide.includes(v)) return false;
+  if (DATE_COLS.has(col) && (f.from || f.to)) {
+    if (!v) return false;
+    if (f.from && v < f.from) return false;
+    if (f.to && v > f.to) return false;
+  }
+  return true;
+}
+function sortLabels(col) {
+  if (DATE_COLS.has(col)) return ["Oldest → Newest", "Newest → Oldest"];
+  if (["progress", "hours"].includes(col)) return ["Smallest → Largest", "Largest → Smallest"];
+  return ["A → Z", "Z → A"];
+}
+
+function HeaderBtn({ id, label, sort, filtered, onOpen, left }) {
   const active = sort && sort.col === id;
-  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  const SortIcon = active ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : null;
   return (
     <button
-      onClick={() => onSort(id)}
-      title="Click to sort ↑ / ↓ / off"
-      className={classNames("group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800", left ? "" : "justify-center", active ? "text-indigo-600 dark:text-indigo-400" : "")}
+      onClick={(e) => onOpen(e.currentTarget.getBoundingClientRect())}
+      title="Sort / filter this column"
+      className={classNames(
+        "group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800",
+        left ? "" : "justify-center",
+        active || filtered ? "text-indigo-600 dark:text-indigo-400" : ""
+      )}
     >
       <span className="truncate">{label}</span>
-      <Icon size={12} className={active ? "" : "opacity-0 group-hover:opacity-60"} />
+      {SortIcon && <SortIcon size={12} />}
+      {filtered ? <Filter size={11} className="fill-current" /> : <ChevronDown size={12} className="opacity-0 group-hover:opacity-60" />}
     </button>
   );
 }
+
+function ColumnMenu({ col, rect, tasks, sort, setSort, filter, setFilter, onClose }) {
+  const ref = useRef(null);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    function away(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    function onScroll(e) {
+      if (ref.current && ref.current.contains(e.target)) return;
+      onClose();
+    }
+    document.addEventListener("mousedown", away);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [onClose]);
+
+  const f = filter || {};
+  const hide = f.hide || [];
+  const isDate = DATE_COLS.has(col);
+  const [asc, desc] = sortLabels(col);
+
+  // distinct values + counts
+  const values = useMemo(() => {
+    if (NO_LIST_COLS.has(col)) return [];
+    const m = new Map();
+    tasks.forEach((t) => {
+      const v = cellValue(t, col);
+      m.set(v, (m.get(v) || 0) + 1);
+    });
+    const arr = [...m.entries()].map(([key, count]) => ({ key, count }));
+    const order = col === "status" ? STATUSES : col === "priority" ? ["High", "Medium", "Low"] : col === "progress" ? ["0%", "1–99%", "100%"] : null;
+    arr.sort((a, b) => {
+      if (a.key === "" || b.key === "") return a.key === "" ? 1 : -1;
+      if (order) return order.indexOf(a.key) - order.indexOf(b.key);
+      if (isDate) return a.key < b.key ? -1 : 1;
+      return a.key.localeCompare(b.key);
+    });
+    return arr;
+  }, [tasks, col, isDate]);
+  const label = (k) => (k === "" ? "(Blanks)" : isDate ? formatDateDisplay(k) : k);
+  const listed = values.filter((v) => label(v.key).toLowerCase().includes(q.toLowerCase()));
+  const allListedOn = listed.length > 0 && listed.every((v) => !hide.includes(v.key));
+  const setHide = (next) => setFilter({ ...f, hide: next });
+
+  const left = Math.min(Math.max(8, rect.left), window.innerWidth - 276);
+  const top = Math.min(rect.bottom + 4, Math.max(8, window.innerHeight - 480));
+  const clear = () => setFilter(null);
+
+  return (
+    <div
+      ref={ref}
+      style={{ position: "fixed", top, left, zIndex: 9999, width: 268 }}
+      className="anim-menu rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+    >
+      <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{COL_LABEL[col]}</p>
+      <div className="grid grid-cols-2 gap-1">
+        {[["asc", asc, ArrowUp], ["desc", desc, ArrowDown]].map(([dir, text, Icon]) => {
+          const on = sort && sort.col === col && sort.dir === dir;
+          return (
+            <button
+              key={dir}
+              onClick={() => setSort(on ? null : { col, dir })}
+              className={classNames(
+                "flex items-center justify-center gap-1 rounded-md border px-2 py-1.5 font-medium",
+                on ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300" : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              )}
+            >
+              <Icon size={12} /> {text}
+            </button>
+          );
+        })}
+      </div>
+
+      {col === "title" && (
+        <div className="mt-2 px-1">
+          <p className="mb-1 text-slate-500">Title contains</p>
+          <input autoFocus value={f.text || ""} onChange={(e) => setFilter({ ...f, text: e.target.value })} placeholder="type to filter…" className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800" />
+        </div>
+      )}
+
+      {isDate && (
+        <div className="mt-2 grid grid-cols-2 gap-1 px-1">
+          <label className="text-slate-500">
+            From
+            <input type="date" value={f.from || ""} onChange={(e) => setFilter({ ...f, from: e.target.value })} className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800" />
+          </label>
+          <label className="text-slate-500">
+            To
+            <input type="date" value={f.to || ""} onChange={(e) => setFilter({ ...f, to: e.target.value })} className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800" />
+          </label>
+        </div>
+      )}
+
+      {values.length > 0 && (
+        <>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="mt-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800" />
+          <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-slate-100 p-1 dark:border-slate-800">
+            <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+              <input
+                type="checkbox"
+                checked={allListedOn}
+                onChange={() => {
+                  const keys = listed.map((v) => v.key);
+                  setHide(allListedOn ? [...new Set([...hide, ...keys])] : hide.filter((k) => !keys.includes(k)));
+                }}
+              />
+              (Select all)
+            </label>
+            {listed.map((v) => (
+              <div key={v.key} className="group flex items-center rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                  <input type="checkbox" checked={!hide.includes(v.key)} onChange={() => setHide(hide.includes(v.key) ? hide.filter((k) => k !== v.key) : [...hide, v.key])} />
+                  <span className="truncate text-slate-700 dark:text-slate-200">{label(v.key)}</span>
+                  <span className="text-slate-400">({v.count})</span>
+                </label>
+                <button onClick={() => setHide(values.map((x) => x.key).filter((k) => k !== v.key))} className="ml-1 hidden rounded px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 group-hover:block dark:text-indigo-300 dark:hover:bg-indigo-500/10">
+                  only
+                </button>
+              </div>
+            ))}
+            {listed.length === 0 && <p className="px-2 py-2 text-slate-400">No match</p>}
+          </div>
+        </>
+      )}
+
+      <div className="mt-2 flex items-center justify-between px-1">
+        <button onClick={clear} disabled={!filterActive(f)} className="rounded-md px-2 py-1 font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800">
+          Clear filter
+        </button>
+        <button onClick={onClose} className="rounded-md bg-indigo-600 px-3 py-1 font-semibold text-white hover:bg-indigo-700">
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 export function BoardView({
   tasks,
@@ -512,6 +806,7 @@ export function BoardView({
   holidaySet,
   workSchedule,
   categoryColors,
+  sla,
   onOpen,
   onStatusChange,
   onPatchTask,
@@ -520,23 +815,30 @@ export function BoardView({
   onUnhoverTask,
 }) {
   const [groupBy, setGroupBy] = useState(() => load("lpt_board_group", "status"));
-  const [hidden, setHidden] = useState(() => load("lpt_board_hidden2", ["hours", "updated"]));
+  const [hidden, setHidden] = useState(() => load("lpt_board_hidden4", ["hours", "updated", "received", "progress"]));
   const [collapsed, setCollapsed] = useState({});
   const [openSubs, setOpenSubs] = useState({});
   const [personFilter, setPersonFilter] = useState("");
   const [menu, setMenu] = useState(null); // "group" | "hide" | null
   const [sort, setSort] = useState(() => load("lpt_board_sort", null)); // {col, dir} | null
   useEffect(() => save("lpt_board_sort", sort), [sort]);
-  const clickSort = (col) =>
-    setSort((s) => (!s || s.col !== col ? { col, dir: "asc" } : s.dir === "asc" ? { col, dir: "desc" } : null));
 
   useEffect(() => save("lpt_board_group", groupBy), [groupBy]);
-  useEffect(() => save("lpt_board_hidden2", hidden), [hidden]);
+  useEffect(() => save("lpt_board_hidden4", hidden), [hidden]);
 
   const cols = COLUMNS.filter((c) => !hidden.includes(c.id)).map((c) => c.id);
   const visibleCols = COLUMNS.filter((c) => cols.includes(c.id));
 
-  const shown = useMemo(() => (personFilter ? tasks.filter((t) => t.assigner === personFilter) : tasks), [tasks, personFilter]);
+  const [filters, setFilters] = useState({}); // { col: {hide:[], from, to, text} }
+  const [colMenu, setColMenu] = useState(null); // { col, rect }
+  const activeFilterCols = Object.keys(filters).filter((c) => filterActive(filters[c]));
+
+  const base = useMemo(() => (personFilter ? tasks.filter((t) => t.assigner === personFilter) : tasks), [tasks, personFilter]);
+  const shown = useMemo(
+    () => base.filter((t) => activeFilterCols.every((c) => passesFilter(t, c, filters[c]))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [base, filters]
+  );
 
   const groups = useMemo(() => {
     const defs = [];
@@ -574,6 +876,8 @@ export function BoardView({
           case "received": return String(getReceivedDate(t) || "") + (t.receivedTime || "");
           case "deadline": { const m = deadlineMoment(t); return m ? +m : null; }
           case "assigner": return (t.assigner || "").toLowerCase() || null;
+          case "ball": return inScope(t) ? ["me", "boss", "done"].indexOf(ballOf(t)) : null;
+          case "completed": return t.completedAt || null;
           case "category": return (t.category || "").toLowerCase() || null;
           case "subcategory": return (t.subcategory || "").toLowerCase() || null;
           case "progress": return taskCompletionPct(t);
@@ -610,7 +914,7 @@ export function BoardView({
             <Layers size={14} /> Group by: <span className="text-indigo-600 dark:text-indigo-400">{GROUP_OPTIONS.find((g) => g.id === groupBy)?.label}</span>
           </button>
           {menu === "group" && (
-            <div className="absolute left-0 top-9 z-30 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="anim-menu absolute left-0 top-9 z-30 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
               {GROUP_OPTIONS.map((g) => (
                 <button
                   key={g.id}
@@ -648,7 +952,7 @@ export function BoardView({
             <EyeOff size={14} /> Columns{hidden.length ? ` (${COLUMNS.length - hidden.length}/${COLUMNS.length})` : ""}
           </button>
           {menu === "hide" && (
-            <div className="absolute left-0 top-9 z-30 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="anim-menu absolute left-0 top-9 z-30 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
               {COLUMNS.map((c) => (
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
                   <input
@@ -663,6 +967,39 @@ export function BoardView({
           )}
         </div>
       </div>
+
+      {activeFilterCols.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-slate-500">Filtering:</span>
+          {activeFilterCols.map((c) => (
+            <button
+              key={c}
+              onClick={() => setFilters((f) => ({ ...f, [c]: null }))}
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300"
+              title="Remove this filter"
+            >
+              {COL_LABEL[c]} <X size={11} />
+            </button>
+          ))}
+          <button onClick={() => setFilters({})} className="font-medium text-slate-500 underline hover:text-slate-700">
+            Clear all
+          </button>
+          <span className="text-slate-400">· {shown.length} of {base.length} tasks</span>
+        </div>
+      )}
+      {colMenu && (
+        <ColumnMenu
+          key={colMenu.col}
+          col={colMenu.col}
+          rect={colMenu.rect}
+          tasks={base}
+          sort={sort}
+          setSort={setSort}
+          filter={filters[colMenu.col]}
+          setFilter={(v) => setFilters((f) => ({ ...f, [colMenu.col]: v }))}
+          onClose={() => setColMenu(null)}
+        />
+      )}
 
       {/* Groups */}
       {groups.map((g) => {
@@ -682,8 +1019,8 @@ export function BoardView({
               <span className="text-sm font-normal text-slate-400">{g.items.length} task{g.items.length === 1 ? "" : "s"}</span>
             </button>
             {!isCollapsed && (
-              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                <table className="w-full table-fixed border-collapse" style={{ minWidth: 300 + visibleCols.reduce((a, c) => a + c.px, 0) }}>
+              <div className="no-scrollbar overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+                <table className="w-full table-fixed border-collapse" style={{ minWidth: 380 + visibleCols.reduce((a, c) => a + c.px, 0) }}>
                   <colgroup>
                     <col style={{ width: 6 }} />
                     <col style={{ width: 36 }} />
@@ -697,11 +1034,11 @@ export function BoardView({
                       <th className="w-1.5 p-0" style={{ backgroundColor: g.color }} />
                       <th className="w-9" />
                       <th className="h-9 min-w-[260px] px-3 text-left text-xs font-medium text-slate-500">
-                        <SortBtn id="title" label="Task" sort={sort} onSort={clickSort} left />
+                        <HeaderBtn id="title" label="Task" sort={sort} filtered={filterActive(filters.title)} onOpen={(rect) => setColMenu({ col: "title", rect })} left />
                       </th>
                       {visibleCols.map((c) => (
                         <th key={c.id} className={th}>
-                          <SortBtn id={c.id} label={c.label} sort={sort} onSort={clickSort} />
+                          <HeaderBtn id={c.id} label={c.label} sort={sort} filtered={filterActive(filters[c.id])} onOpen={(rect) => setColMenu({ col: c.id, rect })} />
                         </th>
                       ))}
                     </tr>
@@ -713,6 +1050,7 @@ export function BoardView({
                         task={t}
                         groupColor={g.color}
                         cols={cols}
+                        sla={sla}
                         expanded={!!openSubs[t.id]}
                         onToggleExpand={() => setOpenSubs((o) => ({ ...o, [t.id]: !o[t.id] }))}
                         span={visibleCols.length + 1}

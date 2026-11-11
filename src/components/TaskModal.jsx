@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { X, AlertTriangle, GripVertical, CheckCircle2, Circle, Trash2, Plus, Clock, ChevronRight, Zap } from "lucide-react";
 import { PRIORITIES, STATUSES, MAX_SUBTASKS, ROUND_TYPE_SUGGESTIONS, stringToColor } from "../lib/constants";
 import {
@@ -10,6 +10,7 @@ import {
   formatHours,
   formatClockTime,
   formatDateDisplay,
+  ruleFor,
   getTemplateSubtasks,
   isTaskCompletedLate,
   lateText,
@@ -18,6 +19,7 @@ import {
   computeAutoDeadline,
 } from "../lib/timeUtils";
 import { Field, IconButton, inputClass } from "./ui";
+import { CyclePanel } from "./CyclePanel";
 
 /* =========================================================================
    TASK MODAL (create / edit / detail)
@@ -108,7 +110,7 @@ function initialDates(task, sla) {
 const dateInputClass = inputClass.replace("w-full", "min-w-0 flex-1");
 const timeInputClass = inputClass.replace("w-full", "w-32 shrink-0");
 
-export function TaskModal({ task, categories, assigners, departments = [], onAddAssigner, sla = { enabled: false, hours: 48 }, onClose, onSave, onDelete, holidaySet, workSchedule }) {
+export function TaskModal({ task, categories, assigners, departments = [], onAddAssigner, sla = { enabled: false, hours: 48, reviewHours: 12 }, onClose, onSave, onDelete, holidaySet, workSchedule }) {
   const isEdit = !!task;
   const firstCat = categories[0]?.name || "";
   const firstSub = categories[0]?.subcategories[0]?.name || "";
@@ -128,6 +130,7 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
       subtasks: task?.subtasks ? [...task.subtasks] : getTemplateSubtasks(categories, initCategory, initSubcategory),
       sessions: task?.sessions ? [...task.sessions] : [],
       rounds: task?.rounds ? [...task.rounds] : [],
+      handoffs: task?.handoffs ? [...task.handoffs] : [],
       estimate: task?.estimate ?? "",
     };
   });
@@ -151,13 +154,24 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
   function changeReceived(patch) {
     setForm((f) => {
       const next = { ...f, ...patch };
-      if (sla.enabled && f.deadlineAuto) Object.assign(next, computeAutoDeadline(next.receivedDate, next.receivedTime, sla.hours));
+      if (sla.enabled && f.deadlineAuto) Object.assign(next, computeAutoDeadline(next.receivedDate, next.receivedTime, sla.hours, next));
       return next;
     });
   }
   function resetToAuto() {
-    setForm((f) => ({ ...f, ...computeAutoDeadline(f.receivedDate, f.receivedTime, sla.hours), deadlineAuto: true }));
+    setForm((f) => ({ ...f, ...computeAutoDeadline(f.receivedDate, f.receivedTime, sla.hours, f), deadlineAuto: true }));
   }
+
+  // Category / subcategory can have its own first-response hours (Settings → Review workflow).
+  const firstHrs = ruleFor(form).first;
+  const catKey = `${form.category}/${form.subcategory}`;
+  const seenCat = useRef(catKey);
+  useEffect(() => {
+    if (seenCat.current === catKey) return;
+    seenCat.current = catKey;
+    setForm((f) => (sla.enabled && f.deadlineAuto && !(f.handoffs || []).length ? { ...f, ...computeAutoDeadline(f.receivedDate, f.receivedTime, sla.hours, f) } : f));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catKey]);
 
   // Quick-add assigner (inline, without leaving the task form)
   const [newAssignerOpen, setNewAssignerOpen] = useState(false);
@@ -273,8 +287,8 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6 sm:items-center">
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="anim-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6 sm:items-center">
+      <div className="anim-pop w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
             {isEdit ? "Edit Task" : "New Task"}
@@ -359,11 +373,11 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
                     />
                   </div>
                   {sla.enabled && form.deadlineAuto && (
-                    <p className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400">Auto: received + {sla.hours}h</p>
+                    <p className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400">Auto: received + {firstHrs}h</p>
                   )}
                   {sla.enabled && !form.deadlineAuto && (
                     <button type="button" onClick={resetToAuto} className="mt-1 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-                      Reset to auto (received + {sla.hours}h)
+                      Reset to auto (received + {firstHrs}h)
                     </button>
                   )}
                   {form.receivedDate && form.deadline && form.deadline < form.receivedDate && (
@@ -371,7 +385,7 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
                   )}
                   {isEdit && isTaskCompletedLate(task) && (
                     <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      <Clock size={11} /> Completed {lateText(task)} after this deadline.
+                      <Clock size={11} /> {lateText(task).startsWith("R") ? `Round ${lateText(task)} missed its target.` : `Completed ${lateText(task)} after this deadline.`}
                     </p>
                   )}
                 </Field>
@@ -482,6 +496,13 @@ export function TaskModal({ task, categories, assigners, departments = [], onAdd
 
           {tab === "rounds" && (
             <div className="space-y-3">
+              <div>
+                <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">Review cycle (supervisor)</p>
+                <CyclePanel task={form} onPatch={(p) => update(p)} />
+              </div>
+              <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Round notes</p>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 For work that goes back and forth (e.g. contract review cycles) — log each round here instead of
                 creating separate tasks. The chart below reads left-to-right in the order you add them.

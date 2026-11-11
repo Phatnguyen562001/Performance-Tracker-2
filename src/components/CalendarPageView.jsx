@@ -18,8 +18,8 @@ export function EventModal({ event, onClose, onSave, onDelete }) {
   }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="anim-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+      <div className="anim-pop w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">{isEdit ? "Edit plan" : "New plan"}</h2>
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">

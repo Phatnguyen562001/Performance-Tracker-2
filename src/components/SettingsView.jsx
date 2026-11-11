@@ -5,6 +5,7 @@ import { PALETTE, MAX_SUBTASKS } from "../lib/constants";
 import { uid, classNames, formatDateDisplay } from "../lib/timeUtils";
 import { IconButton, inputClass, DoubleConfirmDialog } from "./ui";
 import { shareUrl } from "../lib/share";
+import { WorkflowCard } from "./WorkflowSettings";
 
 /* =========================================================================
    CATEGORY MANAGER (Settings)
@@ -480,6 +481,8 @@ export function SettingsView({
   userId,
   slaSettings,
   onSlaChange,
+  workflow,
+  onWorkflowChange,
   shareToken,
   shareIncludeNotes,
   onEnableShare,
@@ -624,6 +627,8 @@ export function SettingsView({
 
       <SlaCard sla={slaSettings} onChange={onSlaChange} />
 
+      <WorkflowCard workflow={workflow} onChange={onWorkflowChange} categories={categories || []} sla={slaSettings} />
+
       <SharingCard
         shareToken={shareToken}
         includeNotes={shareIncludeNotes}
@@ -675,7 +680,7 @@ function SlaCard({ sla, onChange }) {
               max="720"
               value={sla.hours}
               onChange={(e) => onChange({ ...sla, hours: e.target.value === "" ? "" : Math.max(1, Math.min(720, Number(e.target.value))) })}
-              className={inputClass + " w-24"}
+              className={inputClass.replace("w-full", "w-24")}
             />
             <span className="text-sm text-slate-500">hours</span>
             {presets.map((p) => (
