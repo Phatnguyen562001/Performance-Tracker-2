@@ -638,6 +638,43 @@ function sortLabels(col) {
   return ["A → Z", "Z → A"];
 }
 
+/** Excel-style drag handle on the right edge of a column header. Double-click = reset width. */
+function ResizeHandle({ getWidth, onResize, onReset }) {
+  function down(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = getWidth();
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    function move(ev) {
+      onResize(Math.max(70, Math.min(700, Math.round(startW + ev.clientX - startX))));
+    }
+    function up() {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    }
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }
+  return (
+    <span
+      onPointerDown={down}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onReset();
+      }}
+      onClick={(e) => e.stopPropagation()}
+      title="Drag to resize · double-click to reset"
+      className="absolute right-0 top-0 z-10 h-full w-2 cursor-col-resize touch-none select-none after:absolute after:right-0 after:top-1.5 after:h-[calc(100%-12px)] after:w-[3px] after:rounded after:bg-transparent hover:after:bg-indigo-400"
+    />
+  );
+}
+
 function HeaderBtn({ id, label, sort, filtered, onOpen, left }) {
   const active = sort && sort.col === id;
   const SortIcon = active ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : null;
@@ -816,6 +853,11 @@ export function BoardView({
 }) {
   const [groupBy, setGroupBy] = useState(() => load("lpt_board_group", "status"));
   const [hidden, setHidden] = useState(() => load("lpt_board_hidden4", ["hours", "updated", "received", "progress"]));
+  const [widths, setWidths] = useState(() => load("lpt_board_widths", {})); // {colId: px}; "title" = Task column
+  useEffect(() => save("lpt_board_widths", widths), [widths]);
+  const colW = (c) => widths[c.id] ?? c.px;
+  const setW = (id, w) => setWidths((x) => ({ ...x, [id]: w }));
+  const resetW = (id) => setWidths((x) => { const n = { ...x }; delete n[id]; return n; });
   const [collapsed, setCollapsed] = useState({});
   const [openSubs, setOpenSubs] = useState({});
   const [personFilter, setPersonFilter] = useState("");
@@ -963,6 +1005,9 @@ export function BoardView({
                   {c.label}
                 </label>
               ))}
+              <button onClick={() => setWidths({})} disabled={!Object.keys(widths).length} className="mt-1 w-full rounded px-2 py-1.5 text-left text-xs font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-300 dark:hover:bg-indigo-500/10">
+                Reset column widths
+              </button>
             </div>
           )}
         </div>
@@ -1020,25 +1065,30 @@ export function BoardView({
             </button>
             {!isCollapsed && (
               <div className="no-scrollbar overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                <table className="w-full table-fixed border-collapse" style={{ minWidth: 380 + visibleCols.reduce((a, c) => a + c.px, 0) }}>
+                <table
+                  className={classNames("table-fixed border-collapse", widths.title == null && "w-full")}
+                  style={widths.title == null ? { minWidth: 380 + visibleCols.reduce((a, c) => a + colW(c), 0) } : { width: 42 + widths.title + visibleCols.reduce((a, c) => a + colW(c), 0) }}
+                >
                   <colgroup>
                     <col style={{ width: 6 }} />
                     <col style={{ width: 36 }} />
-                    <col />
+                    <col style={widths.title != null ? { width: widths.title } : undefined} />
                     {visibleCols.map((c) => (
-                      <col key={c.id} style={{ width: c.px }} />
+                      <col key={c.id} style={{ width: colW(c) }} />
                     ))}
                   </colgroup>
                   <thead>
                     <tr className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60">
                       <th className="w-1.5 p-0" style={{ backgroundColor: g.color }} />
                       <th className="w-9" />
-                      <th className="h-9 min-w-[260px] px-3 text-left text-xs font-medium text-slate-500">
+                      <th className="relative h-9 min-w-[200px] select-none px-3 text-left text-xs font-medium text-slate-500">
                         <HeaderBtn id="title" label="Task" sort={sort} filtered={filterActive(filters.title)} onOpen={(rect) => setColMenu({ col: "title", rect })} left />
+                        <ResizeHandle getWidth={(e) => widths.title ?? 300} onResize={(w) => setW("title", w)} onReset={() => resetW("title")} />
                       </th>
                       {visibleCols.map((c) => (
-                        <th key={c.id} className={th}>
+                        <th key={c.id} className={th + " relative select-none"}>
                           <HeaderBtn id={c.id} label={c.label} sort={sort} filtered={filterActive(filters[c.id])} onOpen={(rect) => setColMenu({ col: c.id, rect })} />
+                          <ResizeHandle getWidth={() => colW(c)} onResize={(w) => setW(c.id, w)} onReset={() => resetW(c.id)} />
                         </th>
                       ))}
                     </tr>
